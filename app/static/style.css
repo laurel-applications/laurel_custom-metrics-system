@@ -1,0 +1,615 @@
+/*
+ * Laurel Metrics -- the stylesheet of the web UI.
+ *
+ * The UI is deliberately plain: no framework, no build step, just a readable
+ * layout with a light palette and a responsive widget grid.
+ */
+
+:root {
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --surface-alt: #fafbfc;
+  --border: #d8dbe0;
+  --border-strong: #b9c0c8;
+  --text: #1c1e21;
+  --text-muted: #55606b;
+  --accent: #0f766e;
+  --accent-soft: #e6f2f1;
+  --danger: #a3231b;
+  --danger-soft: #fdecea;
+  --radius: 0.6rem;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  line-height: 1.5;
+  font-size: 15px;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  padding: 0.05rem 0.3rem;
+}
+
+/* ---------------------------------------------------------------- top bar */
+
+.topbar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar-inner {
+  max-width: 78rem;
+  margin: 0 auto;
+  padding: 0.85rem 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--text);
+  font-weight: 650;
+}
+
+.brand:hover {
+  text-decoration: none;
+}
+
+.brand-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.45rem;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+}
+
+.nav {
+  display: flex;
+  gap: 1.25rem;
+}
+
+.nav a {
+  color: var(--text-muted);
+  font-weight: 550;
+}
+
+.nav a:hover {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+/* ---------------------------------------------------------------- content */
+
+.content {
+  max-width: 78rem;
+  margin: 0 auto;
+  padding: 1.75rem 1.5rem 3rem;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.5rem;
+}
+
+.panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.panel-actions form {
+  margin: 0;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 1.35rem;
+  letter-spacing: -0.01em;
+}
+
+.page-subtitle {
+  margin: 0.2rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.panel-title {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 20rem;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 60rem) {
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.muted {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+/* ------------------------------------------------------------------ table */
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 0.55rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.table th {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ----------------------------------------------------------------- forms */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.form-wide {
+  gap: 1.25rem;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.field-inline {
+  flex: 1 1 8rem;
+}
+
+.field-label {
+  font-size: 0.78rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.field-hint {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+input[type="text"],
+input[type="number"],
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 0.4rem;
+  padding: 0.45rem 0.55rem;
+  width: 100%;
+}
+
+textarea {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  resize: vertical;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.fieldset {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.fieldset legend {
+  font-weight: 650;
+  padding: 0 0.35rem;
+}
+
+.filter-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.filter-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-alt);
+}
+
+.actions {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 0;
+}
+
+/* --------------------------------------------------------------- buttons */
+
+.button {
+  display: inline-block;
+  font: inherit;
+  font-weight: 550;
+  color: #fff;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 0.4rem;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+}
+
+.button:hover {
+  text-decoration: none;
+  filter: brightness(1.06);
+}
+
+.button-ghost {
+  color: var(--accent);
+  background: var(--surface);
+}
+
+.button-danger {
+  color: var(--danger);
+  background: var(--surface);
+  border-color: var(--danger);
+}
+
+.button-small {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.82rem;
+}
+
+/* ------------------------------------------------------------ empty state */
+
+.empty-state {
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  background: var(--surface-alt);
+}
+
+.empty-state h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.05rem;
+}
+
+.empty-state p {
+  margin: 0 0 0.75rem;
+}
+
+.steps {
+  margin: 0 0 1rem;
+  padding-left: 1.2rem;
+}
+
+.steps li {
+  margin-bottom: 0.35rem;
+}
+
+.code-block {
+  background: #11161c;
+  color: #e8eaed;
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius);
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  margin: 0;
+}
+
+.code-block code {
+  background: none;
+  border: none;
+  color: inherit;
+  padding: 0;
+}
+
+/* ------------------------------------------------------------- error block */
+
+.error-block {
+  border: 1px solid var(--danger);
+  background: var(--danger-soft);
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem;
+  margin: 0 0 1.25rem;
+}
+
+.error-block-title {
+  margin: 0 0 0.4rem;
+  font-weight: 650;
+  color: var(--danger);
+}
+
+.error-code {
+  display: inline-block;
+  margin: 0 0 0.6rem;
+  font-family: var(--mono);
+  font-size: 0.95rem;
+  font-weight: 700;
+  background: #fff;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  border-radius: 0.35rem;
+  padding: 0.1rem 0.5rem;
+}
+
+.error-fields {
+  display: grid;
+  grid-template-columns: minmax(6rem, 9rem) minmax(0, 1fr);
+  gap: 0.3rem 1rem;
+  margin: 0;
+}
+
+.error-fields dt {
+  font-weight: 650;
+  color: var(--text-muted);
+}
+
+.error-fields dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.86rem;
+  overflow-wrap: anywhere;
+}
+
+/* ----------------------------------------------------------- widget grid */
+
+.widget-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
+  gap: 1rem;
+}
+
+.widget {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.widget.sortable-ghost {
+  opacity: 0.45;
+}
+
+.widget.sortable-chosen {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.widget-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.7rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-alt);
+}
+
+.widget-handle {
+  cursor: grab;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1.2;
+  user-select: none;
+  padding-top: 0.1rem;
+}
+
+.widget-titles {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.widget-title {
+  margin: 0;
+  font-size: 0.98rem;
+  overflow-wrap: anywhere;
+}
+
+.widget-meta {
+  margin: 0.1rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.widget-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.widget-actions form {
+  margin: 0;
+}
+
+.widget-body {
+  padding: 0.85rem;
+  min-height: 8rem;
+}
+
+.widget-placeholder {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+/* The canvas is sized by Chart.js from its parent, so the parent needs a
+   fixed height. */
+.chart-box {
+  position: relative;
+  height: 16rem;
+  width: 100%;
+}
+
+.widget-error {
+  border: 1px solid var(--danger);
+  background: var(--danger-soft);
+  border-radius: var(--radius);
+  padding: 0.7rem 0.8rem;
+  margin: 0;
+}
+
+.widget-error .error-code {
+  margin-bottom: 0.4rem;
+}
+
+.widget-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.widget-table th,
+.widget-table td {
+  text-align: left;
+  padding: 0.3rem 0.45rem;
+  border-bottom: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+}
+
+.widget-table th {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.stat {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 1.5rem 0.5rem;
+  justify-content: center;
+}
+
+.stat-value {
+  font-size: 2.6rem;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-unit {
+  color: var(--text-muted);
+  font-size: 1rem;
+}
+
+.stat-caption {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  margin: 0 0 0.75rem;
+}
+
+.grid-status {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.grid-status.is-error {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------- footer */
+
+.footer {
+  max-width: 78rem;
+  margin: 0 auto;
+  padding: 0 1.5rem 2rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}

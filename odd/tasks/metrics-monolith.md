@@ -152,7 +152,7 @@ learning a query language.
 | T1 | delegated writer | done | `1ff66da` — app factory, models, Alembic initial migration; `alembic upgrade head` + `alembic check` clean on SQLite, `--sql` renders valid MariaDB DDL |
 | T2 | delegated writer | done | 33 pytest tests pass; curl smoke: 201 created / 409 METRIC_TYPE_MISMATCH / 400 INVALID_VALUE / 200 metrics list |
 | T3 | delegated writer | done | 75 pytest tests pass (42 new); curl smoke: auto bucket, explicit bucket, `group_by=host`, filters, string/bool metrics, 4 error envelopes verified |
-| T4 | delegated writer | pending | — |
+| T4 | delegated writer | done | 98 pytest tests pass (23 new); curl smoke: dashboard/widget CRUD, explicit 400 for an invalid aggregation and for malformed filters, drag & drop order persisted, tag discovery endpoint |
 | T5 | delegated writer | pending | — |
 
 ## Verification
@@ -168,3 +168,12 @@ learning a query language.
   must behave identically on both engines.
 - Tags are serialized into `TEXT` rather than using MariaDB's `JSON` alias, because the
   alias carries no operator guarantees and would make the SQLite path diverge.
+- The `widgets` table has no `group_by` column, and the schema must not change in this
+  task, so the whole configuration of a widget lives in the single JSON document of the
+  `filters` column: `{"group_by": "host", "filters": [...]}`.  Every filter object of the
+  array is stored verbatim, exactly as the filter contract describes it, and a bare JSON
+  array is still accepted when reading.  Adding a real `group_by` column (with its
+  Alembic migration) is the natural follow-up.
+- The widget builder reuses the parsers of the query API (`parse_agg`, `parse_bucket`,
+  `parse_group_by` and `app.query.filters.parse_filters`), so a widget can never store a
+  configuration the query API would reject.

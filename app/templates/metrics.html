@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% from "_error_block.html" import error_block %}
+
+{% block title %}Metrics &middot; Laurel Metrics{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <div class="panel-head">
+      <h1 class="page-title">Metrics</h1>
+      <a class="button button-ghost" href="{{ url_for('web.dashboard_list') }}"
+        >Back to the dashboards</a
+      >
+    </div>
+
+    {{ error_block(error, "The metrics could not be loaded") }}
+
+    {% if metrics %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th>Type</th>
+            <th>Unit</th>
+            <th class="num">Data points</th>
+            <th>Created</th>
+            <th>Add widget</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for metric in metrics %}
+            <tr>
+              <td><code>{{ metric.name }}</code></td>
+              <td>{{ metric.type }}</td>
+              <td>{{ metric.unit if metric.unit else "-" }}</td>
+              <td class="num">{{ metric.data_point_count }}</td>
+              <td>{{ metric.created_at_ms | ts }}</td>
+              <td>
+                {% if dashboards %}
+                  <a
+                    class="button button-small"
+                    href="{{ url_for('web.widget_form_new', dashboard_id=dashboards[0].id, metric=metric.name) }}"
+                    >Add widget</a
+                  >
+                {% else %}
+                  <span class="muted"
+                    >Create a dashboard first to add a widget for this metric.</span
+                  >
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="empty-state">
+        <h2>There is no metric yet</h2>
+        <p>
+          A metric is created automatically by its first ingestion, so there is
+          nothing to create by hand.  Push a first data point with
+          <code>POST /api/ingest</code>:
+        </p>
+        <pre class="code-block"><code>curl -X POST {{ request.url_root }}api/ingest \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "requests", "type": "counter", "value": 1, "tags": {"host": "web-1"}}'</code></pre>
+      </div>
+    {% endif %}
+  </section>
+{% endblock %}

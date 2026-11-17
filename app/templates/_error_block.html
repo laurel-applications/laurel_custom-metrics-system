@@ -1,0 +1,40 @@
+{#
+  The error block.
+
+  Every field of the error envelope is rendered visibly: the code, the
+  message, the field, the expected value, the received value and the hint.
+  Nothing is hidden behind a tooltip or a collapsed element, because the user
+  has to be able to read the cause of the failure without opening anything.
+#}
+{% macro error_block(error, title="The request could not be completed") %}
+  {% if error %}
+    <div class="error-block" role="alert" data-error-code="{{ error.code }}">
+      <p class="error-block-title">{{ title }}</p>
+      <p class="error-code">{{ error.code }}</p>
+      <dl class="error-fields">
+        <dt>Message</dt>
+        <dd data-error-field="message">{{ error.message }}</dd>
+
+        <dt>Field</dt>
+        <dd data-error-field="field">
+          {{ error.field if error.field is not none else "(body level error)" }}
+        </dd>
+
+        <dt>Expected</dt>
+        <dd data-error-field="expected">
+          {{ error.expected | jvalue if error.expected is not none else "(not applicable)" }}
+        </dd>
+
+        <dt>Received</dt>
+        <dd data-error-field="received">
+          {{ error.received | jvalue if error.received is not none else "(nothing)" }}
+        </dd>
+
+        <dt>Hint</dt>
+        <dd data-error-field="hint">
+          {{ error.hint if error.hint else "Review the request and try again." }}
+        </dd>
+      </dl>
+    </div>
+  {% endif %}
+{% endmacro %}

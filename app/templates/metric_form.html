@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% from "_error_block.html" import error_block %}
+
+{% macro filter_row(field, op, value) %}
+  <div class="filter-row" data-role="filter-row" data-field="{{ field }}">
+    <label class="field field-inline">
+      <span class="field-label">Field</span>
+      <select data-role="filter-field" name="filter_field">
+        <option value="value" {% if field == 'value' %}selected{% endif %}>value</option>
+        <option value="ts" {% if field == 'ts' %}selected{% endif %}>ts</option>
+      </select>
+    </label>
+
+    <label class="field field-inline">
+      <span class="field-label">Operator</span>
+      <select data-role="filter-op" name="filter_op">
+        <option value="{{ op }}" selected>{{ op }}</option>
+      </select>
+    </label>
+
+    <label class="field field-inline">
+      <span class="field-label">Value</span>
+      <input
+        type="text"
+        data-role="filter-value"
+        name="filter_value"
+        value="{{ value if value is not none else '' }}"
+      />
+    </label>
+
+    <button type="button" class="button button-small" data-role="filter-remove">
+      Remove
+    </button>
+  </div>
+{% endmacro %}
+
+{% block title %}
+  {% if widget %}Edit widget &middot; {{ dashboard.name }}{% else %}New widget &middot;
+  {{ dashboard.name }}{% endif %}
+{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <h1 class="page-title">
+      {% if widget %}Edit widget{% else %}New widget{% endif %}
+    </h1>
+    <p class="page-subtitle">
+      Dashboard <strong>{{ dashboard.name }}</strong>
+    </p>
+
+    {{ error_block(error, "The widget could not be saved") }}
+
+    <form
+      class="form form-wide"
+      method="post"
+      action="{% if widget %}{{ url_for('web.widget_update', widget_id=widget.id) }}{% else %}{{ url_for('web.widget_create', dashboard_id=dashboard.id) }}{% endif %}"
+      data-role="widget-form"
+    >
+      <div class="form-grid">
+        <label class="field">
+          <span class="field-label">Title</span>
+          <input
+            type="text"
+            name="title"
+            maxlength="255"
+            value="{{ values.title }}"
+            placeholder="Requests per minute"
+            required
+          />
+          <span class="field-hint">The name shown above the chart.</span>
+        </label>
+
+        <label class="field">
+          <span class="field-label">Metric</span>
+          <select name="metric" data-role="metric-select" required>
+            <option value="">Pick a metric</option>
+            {% for metric in metrics %}
+              <option
+                value="{{ metric.name }}"
+                data-type="{{ metric.type }}"
+                {% if values.metric == metric.name %}selected{% endif %}
+              >
+                {{ metric.name }} ({{ metric.type }})
+              </option>
+            {% endfor %}
+          </select>
+          <span class="field-hint">
+            A metric appears here as soon as it receives its first data point.
+          </span>
+        </label>
+
+        <label class="field">
+          <span class="field-label">Chart type</span>
+          <select name="chart_type">
+            {% for chart_type in chart_types %}
+              <option
+                value="{{ chart_type }}"
+                {% if values.chart_type == chart_type %}selected{% endif %}
+              >
+                {{ chart_type }}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label class="field">
+          <span class="field-label">Aggregation</span>
+          <select name="agg" data-role="agg-select">
+            {% for agg in ['sum', 'avg', 'min', 'max', 'count', 'last'] %}
+              <option value="{{ agg }}" {% if values.agg == agg %}selected{% endif %}>
+                {{ agg }}
+              </option>
+            {% endfor %}
+          </select>
+          <span class="field-hint" data-role="agg-hint">
+            The list is narrowed to the aggregations the metric type allows.
+          </span>
+        </label>
+
+        <label class="field">
+          <span class="field-label">Bucket</span>
+          <input
+            type="text"
+            name="bucket"
+            value="{{ values.bucket }}"
+            placeholder="auto"
+          />
+          <span class="field-hint">
+            <code>auto</code> or a positive number of seconds.
+          </span>
+        </label>
+
+        <label class="field">
+          <span class="field-label">Time range</span>
+          <select name="time_range">
+            {% for time_range in time_ranges %}
+              <option
+                value="{{ time_range }}"
+                {% if values.time_range == time_range %}selected{% endif %}
+              >
+                {{ time_range }}
+              </option>
+            {% endfor %}
+          </select>
+          <span class="field-hint">The range is resolved against the browser clock.</span>
+        </label>
+
+        <label class="field">
+          <span class="field-label">Group by tag</span>
+          <select name="group_by" data-role="group-by-select">
+            <option value="">No grouping</option>
+            {% if values.group_by %}
+              <option value="{{ values.group_by }}" selected>{{ values.group_by }}</option>
+            {% endif %}
+          </select>
+          <span class="field-hint">
+            The tag keys are discovered from the data points of the metric.
+          </span>
+        </label>
+      </div>
+
+      <fieldset class="fieldset">
+        <legend>Filters</legend>
+        <p class="field-hint">
+          Only the operators valid for the type of the selected metric are
+          offered.
+        </p>
+
+        <div class="filter-rows" data-role="filter-rows">
+          {% for filter in filter_rows %}
+            {{ filter_row(filter.field, filter.op, filter.value) }}
+          {% endfor %}
+        </div>
+
+        <p>
+          <button type="button" class="button button-small" data-role="filter-add">
+            Add filter
+          </button>
+        </p>
+
+        <label class="field">
+          <span class="field-label">Filters (JSON)</span>
+          <textarea name="filters" rows="4" data-role="filters-json">{{ values.filters }}</textarea>
+          <span class="field-hint">
+            The array of filters sent to the query API, for example
+            <code>[{"field": "value", "op": "&gt;", "value": 10}]</code>.
+          </span>
+        </label>
+      </fieldset>
+
+      <div class="actions">
+        <button type="submit" class="button">
+          {% if widget %}Save the widget{% else %}Add the widget{% endif %}
+        </button>
+        <a class="button button-ghost" href="{{ url_for('web.dashboard_detail', dashboard_id=dashboard.id) }}"
+          >Cancel</a
+        >
+      </div>
+    </form>
+  </section>
+{% endblock %}

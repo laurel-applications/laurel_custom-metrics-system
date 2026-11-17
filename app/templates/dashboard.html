@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% from "_error_block.html" import error_block %}
+
+{% block title %}{{ dashboard.name }} &middot; Laurel Metrics{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h1 class="page-title">{{ dashboard.name }}</h1>
+        <p class="page-subtitle">
+          Created {{ dashboard.created_at_ms | ts }} &middot;
+          {{ widgets | length }} widget{{ "" if widgets | length == 1 else "s" }}
+        </p>
+      </div>
+      <div class="panel-actions">
+        <a
+          class="button"
+          href="{{ url_for('web.widget_form_new', dashboard_id=dashboard.id) }}"
+          >Add widget</a
+        >
+        <form
+          method="post"
+          action="{{ url_for('web.dashboard_delete', dashboard_id=dashboard.id) }}"
+          onsubmit="return confirm('Delete this dashboard and all its widgets?');"
+        >
+          <button type="submit" class="button button-danger">Delete dashboard</button>
+        </form>
+      </div>
+    </div>
+
+    {{ error_block(error, "The widget could not be saved") }}
+
+    {% if widgets %}
+      <p class="grid-status" data-role="order-status" aria-live="polite"></p>
+      <div class="widget-grid" id="widget-grid" data-dashboard-id="{{ dashboard.id }}">
+        {% for widget in widgets %}
+          <article
+            class="widget"
+            data-widget-id="{{ widget.id }}"
+            data-config='{{ widget.config | tojson }}'
+          >
+            <header class="widget-head">
+              <span class="widget-handle" data-role="handle" title="Drag to reorder"
+                >&#8942;&#8942;</span
+              >
+              <div class="widget-titles">
+                <h2 class="widget-title">{{ widget.title }}</h2>
+                <p class="widget-meta">
+                  {{ widget.metric_name }} &middot; {{ widget.agg }} &middot;
+                  {{ widget.time_range }} &middot; {{ widget.chart_type }}
+                  {% if widget.group_by %}&middot; by {{ widget.group_by }}{% endif %}
+                </p>
+              </div>
+              <div class="widget-actions">
+                <a
+                  class="button button-small"
+                  href="{{ url_for('web.widget_edit_form', widget_id=widget.id) }}"
+                  >Edit</a
+                >
+                <form
+                  method="post"
+                  action="{{ url_for('web.widget_delete', widget_id=widget.id) }}"
+                >
+                  <button type="submit" class="button button-small button-danger">
+                    Delete
+                  </button>
+                </form>
+              </div>
+            </header>
+            <div class="widget-body" data-role="body">
+              <p class="widget-placeholder">Loading the data&hellip;</p>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state">
+        <h2>This dashboard has no widget yet</h2>
+        <p>
+          A widget visualizes one metric over a time range.  Press
+          <strong>Add widget</strong> to pick the metric, the chart type, the
+          aggregation and the filters.
+        </p>
+        {% if not metrics %}
+          <p>
+            There is no metric to visualize yet.  Push one with
+            <code>POST /api/ingest</code> and the metric will show up here.
+          </p>
+        {% endif %}
+      </div>
+    {% endif %}
+  </section>
+{% endblock %}

@@ -1,105 +1,15 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{{ status }} &middot; {{ error.code }}</title>
-    <style>
-      :root {
-        color-scheme: light dark;
-      }
-      body {
-        margin: 0;
-        padding: 2.5rem 1.5rem;
-        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-          "Helvetica Neue", Arial, sans-serif;
-        line-height: 1.5;
-        background: #f4f5f7;
-        color: #1c1e21;
-      }
-      main {
-        max-width: 46rem;
-        margin: 0 auto;
-        background: #ffffff;
-        border: 1px solid #d8dbe0;
-        border-radius: 0.75rem;
-        padding: 1.75rem;
-      }
-      h1 {
-        margin: 0 0 0.25rem;
-        font-size: 1.25rem;
-      }
-      .status {
-        margin: 0 0 1.5rem;
-        color: #55606b;
-        font-size: 0.9rem;
-      }
-      .code {
-        display: inline-block;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        font-size: 1rem;
-        font-weight: 700;
-        background: #fdecea;
-        color: #a3231b;
-        border-radius: 0.35rem;
-        padding: 0.15rem 0.5rem;
-      }
-      dl {
-        display: grid;
-        grid-template-columns: minmax(7rem, 10rem) 1fr;
-        gap: 0.4rem 1rem;
-        margin: 1.25rem 0 0;
-      }
-      dt {
-        font-weight: 600;
-        color: #55606b;
-      }
-      dd {
-        margin: 0;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        overflow-wrap: anywhere;
-      }
-      @media (prefers-color-scheme: dark) {
-        body {
-          background: #16181c;
-          color: #e8eaed;
-        }
-        main {
-          background: #1f2226;
-          border-color: #333840;
-        }
-        .status,
-        dt {
-          color: #a4adb8;
-        }
-        .code {
-          background: #3a1f1d;
-          color: #ff9d94;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <main>
-      <h1><span class="code">{{ error.code }}</span></h1>
-      <p class="status">HTTP {{ status }}</p>
+{% extends "base.html" %}
+{% from "_error_block.html" import error_block %}
 
-      <dl>
-        <dt>Message</dt>
-        <dd>{{ error.message }}</dd>
+{% block title %}{{ status }} &middot; {{ error.code }} &middot; Laurel Metrics{% endblock %}
 
-        <dt>Field</dt>
-        <dd>{{ error.field if error.field is not none else "(body level error)" }}</dd>
-
-        <dt>Expected</dt>
-        <dd>{{ error.expected if error.expected is not none else "(not applicable)" }}</dd>
-
-        <dt>Received</dt>
-        <dd>{{ error.received if error.received is not none else "(nothing)" }}</dd>
-
-        <dt>Hint</dt>
-        <dd>{{ error.hint if error.hint else "Review the request and try again." }}</dd>
-      </dl>
-    </main>
-  </body>
-</html>
+{% block content %}
+  <section class="panel">
+    <h1 class="page-title">Something went wrong</h1>
+    <p class="page-subtitle">HTTP {{ status }}</p>
+    {{ error_block(error, "The request could not be completed") }}
+    <p class="actions">
+      <a class="button" href="{{ url_for('web.dashboard_list') }}">Back to the dashboards</a>
+    </p>
+  </section>
+{% endblock %}

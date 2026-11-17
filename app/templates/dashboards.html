@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% from "_error_block.html" import error_block %}
+
+{% block title %}Dashboards &middot; Laurel Metrics{% endblock %}
+
+{% block content %}
+  <section class="panel">
+    <div class="panel-head">
+      <h1 class="page-title">Dashboards</h1>
+      <a class="button button-ghost" href="{{ url_for('web.metrics_overview') }}"
+        >Browse the metrics</a
+      >
+    </div>
+
+    {{ error_block(error, "The dashboard could not be created") }}
+
+    <div class="split">
+      <div class="split-main">
+        {% if dashboards %}
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th class="num">Widgets</th>
+                <th>Last updated</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for dashboard in dashboards %}
+                <tr>
+                  <td>
+                    <a href="{{ url_for('web.dashboard_detail', dashboard_id=dashboard.id) }}"
+                      >{{ dashboard.name }}</a
+                    >
+                  </td>
+                  <td class="num">{{ dashboard.widget_count }}</td>
+                  <td>{{ dashboard.last_widget_ms | ts }}</td>
+                  <td>{{ dashboard.created_at_ms | ts }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <div class="empty-state">
+            <h2>There is no dashboard yet</h2>
+            <p>
+              A dashboard is a named grid of widgets.  A widget visualizes one
+              metric over a time range, so the first thing to do is to create a
+              dashboard and then add a widget to it.
+            </p>
+            <ol class="steps">
+              <li>
+                Create a dashboard with the form on this page (the name is the
+                only thing it needs).
+              </li>
+              <li>
+                Push at least one data point for the metric you want to see.
+                The metric is created automatically by its first ingestion, so
+                there is no metric to create beforehand.
+              </li>
+              <li>
+                Open the dashboard, press
+                <strong>Add widget</strong> and pick the metric, the
+                aggregation and the filters.
+              </li>
+            </ol>
+            <p>
+              This command pushes a first data point and creates the metric
+              <code>requests</code> with the tag <code>host</code>:
+            </p>
+            <pre class="code-block"><code>curl -X POST {{ request.url_root }}api/ingest \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "requests", "type": "counter", "value": 1, "tags": {"host": "web-1"}}'</code></pre>
+          </div>
+        {% endif %}
+      </div>
+
+      <aside class="split-side">
+        <h2 class="panel-title">New dashboard</h2>
+        <form method="post" action="{{ url_for('web.dashboard_create') }}" class="form">
+          <label class="field">
+            <span class="field-label">Name</span>
+            <input
+              type="text"
+              name="name"
+              maxlength="255"
+              placeholder="Production overview"
+              required
+            />
+            <span class="field-hint">Between 1 and 255 characters.</span>
+          </label>
+          <button type="submit" class="button">Create dashboard</button>
+        </form>
+      </aside>
+    </div>
+  </section>
+{% endblock %}

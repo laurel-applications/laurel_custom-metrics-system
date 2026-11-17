@@ -29,6 +29,14 @@ JSON_CONTENT_TYPES = ("application/json", "text/json")
 #: The default range of a query without an explicit ``from``/``to``.
 DEFAULT_RANGE_MS = 24 * 3600 * 1000
 
+#: How many recent data points are read to discover the tag keys of a metric.
+#: The scan is bounded on purpose: the tag discovery must stay cheap even for
+#: a metric with millions of points.
+TAG_SCAN_LIMIT = 1000
+
+#: How many distinct values are sampled per tag key.
+TAG_VALUE_SAMPLE_SIZE = 10
+
 
 def _describe(value: Any) -> Any:
     """Return a JSON safe description of an arbitrary value."""
@@ -465,6 +473,47 @@ def _run_query(params: Mapping[str, Any]) -> Any:
     )
 
 
+@bp.get("/metrics/<metric_name>/tags")
+def metric_tags(metric_name: str) -> Any:
+    """List the tag keys of a metric and a sample of their values.
+
+    The widget builder needs to know which tag keys exist before it can offer
+    them as filter fields.  Tags live in a JSON document inside a ``TEXT``
+    column, so the keys are discovered by reading a bounded number of recent
+    data points and parsing their documents in Python.
+    """
+    metric = _resolve_metric(metric_name)
+
+    statement = (
+        select(DataPoint.tags)
+        .where(DataPoint.metric_id == metric.id)
+        .order_by(DataPoint.ts_utc_ms.desc(), DataPoint.id.desc())
+        .limit(TAG_SCAN_LIMIT)
+    )
+    rows = db.session.execute(statement).scalars().all()
+
+    keys: list[str] = []
+    sample_values: dict[str, list[str]] = {}
+    for raw in rows:
+        tags = _parse_tags(raw)
+        for key, value in tags.items():
+            if key not in sample_values:
+                keys.append(key)
+                sample_values[key] = []
+            values = sample_values[key]
+            text = filter_module.tag_as_text(value)
+            if text not in values and len(values) < TAG_VALUE_SAMPLE_SIZE:
+                values.append(text)
+
+    return jsonify(
+        {
+            "metric": metric.name,
+            "keys": sorted(keys),
+            "sample_values": {key: sample_values[key] for key in sorted(sample_values)},
+        }
+    )
+
+
 @bp.get("/query")
 def query_get() -> Any:
     """Query a metric with the parameters carried by the query string."""
@@ -475,3 +524,14 @@ def query_get() -> Any:
 def query_post() -> Any:
     """Query a metric with the parameters carried by a JSON body."""
     return _run_query(_parse_body())
+
+
+#: Public aliases of the parameter parsers.
+#:
+#: The widget builder must never be able to store a configuration the query
+#: API would reject, so it reuses these very functions instead of
+#: re-implementing the rules.  The aliases keep the module private helpers
+#: private while giving the other layers a supported entry point.
+parse_agg = _parse_agg
+parse_bucket = _parse_bucket
+parse_group_by = _parse_group_by
