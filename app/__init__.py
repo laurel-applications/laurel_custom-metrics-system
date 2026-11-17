@@ -8,12 +8,14 @@ from typing import Any, Mapping
 from flask import Flask, jsonify
 
 from .config import default_database_url
+from .errors import register_error_handlers
 from .extensions import db
+from .ingest import bp as ingest_bp
 
 #: Blueprints registered by the application.  T2 (ingestion), T3 (query) and
 #: T4 (web UI) add their own entry here; keeping the list explicit avoids
 #: import cycles between the factory and the packages it serves.
-BLUEPRINTS: tuple[Any, ...] = ()
+BLUEPRINTS: tuple[Any, ...] = (ingest_bp,)
 
 
 def create_app(config: Mapping[str, Any] | None = None) -> Flask:
@@ -49,6 +51,11 @@ def create_app(config: Mapping[str, Any] | None = None) -> Flask:
     from . import models  # noqa: F401
 
     db.init_app(app)
+
+    # The error contract is installed before the blueprints so a failure
+    # raised while the factory builds the application is reported with the
+    # same envelope as a failure raised while serving a request.
+    register_error_handlers(app)
 
     for blueprint in BLUEPRINTS:
         app.register_blueprint(blueprint)

@@ -149,8 +149,8 @@ learning a query language.
 
 | Task | Route | Status | Evidence |
 | --- | --- | --- | --- |
-| T1 | delegated writer | pending | — |
-| T2 | delegated writer | pending | — |
+| T1 | delegated writer | done | `1ff66da` — app factory, models, Alembic initial migration; `alembic upgrade head` + `alembic check` clean on SQLite, `--sql` renders valid MariaDB DDL |
+| T2 | delegated writer | done | 33 pytest tests pass; curl smoke: 201 created / 409 METRIC_TYPE_MISMATCH / 400 INVALID_VALUE / 200 metrics list |
 | T3 | delegated writer | pending | — |
 | T4 | delegated writer | pending | — |
 | T5 | delegated writer | pending | — |
