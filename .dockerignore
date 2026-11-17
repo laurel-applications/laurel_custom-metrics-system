@@ -1,0 +1,33 @@
+# Don't ship the local database into the image. The container reads its own
+# DATABASE_URL, so a stray metrics.db would silently shadow the real one.
+instance/
+*.db
+*.sqlite
+*.sqlite3
+
+# Don't ship secrets or the local virtualenv.
+.env
+.env.local
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Don't ship git / editor metadata.
+.git/
+.gitignore
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Keep requirements.txt and the actual source code.
+!requirements.txt
+!app/
+!alembic/
+!alembic.ini
+!templates/
+!static/

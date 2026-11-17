@@ -26,7 +26,7 @@ CMD ["gunicorn", \
      "app:create_app()"]
 
 
-# Healthcheck hits the /healthz endpoint that the app exposes.
+# Healthcheck hits the /health endpoint that the app exposes.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:80/healthz').read()" \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:80/health').read()" \
     || exit 1
