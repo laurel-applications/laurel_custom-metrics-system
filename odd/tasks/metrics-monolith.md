@@ -153,7 +153,7 @@ learning a query language.
 | T2 | delegated writer | done | 33 pytest tests pass; curl smoke: 201 created / 409 METRIC_TYPE_MISMATCH / 400 INVALID_VALUE / 200 metrics list |
 | T3 | delegated writer | done | 75 pytest tests pass (42 new); curl smoke: auto bucket, explicit bucket, `group_by=host`, filters, string/bool metrics, 4 error envelopes verified |
 | T4 | delegated writer | done | 98 pytest tests pass (23 new); curl smoke: dashboard/widget CRUD, explicit 400 for an invalid aggregation and for malformed filters, drag & drop order persisted, tag discovery endpoint |
-| T5 | delegated writer | pending | — |
+| T5 | delegated writer | done | 119 pytest tests pass; `alembic check` clean; `alembic upgrade head --sql` renders `ALTER TABLE widgets ADD COLUMN group_by VARCHAR(64)` for MariaDB; 4 front-end defects found and fixed |
 
 ## Verification
 
@@ -177,3 +177,35 @@ learning a query language.
 - The widget builder reuses the parsers of the query API (`parse_agg`, `parse_bucket`,
   `parse_group_by` and `app.query.filters.parse_filters`), so a widget can never store a
   configuration the query API would reject.
+
+## Accepted changes during implementation
+
+- **T5 replaced the T4 schema workaround.** T4 stored the whole widget configuration in
+  the `filters` column as `{"group_by": ..., "filters": [...]}` because the schema was
+  frozen for that task. T5 added a real `group_by` column (migration `0002_widget_group_by`)
+  with a reversible data migration that moves the legacy value and leaves `filters` with
+  the bare JSON array. Reading still accepts the legacy document, so an unmigrated
+  database keeps working. Reason: a column named `filters` must not hold anything else.
+- **T5 fixed four front-end defects** that T4 introduced: a failed query left the chart
+  on its loading placeholder forever; a filter value that looked like a number was
+  coerced to a number even for string metrics, which made the server reject the whole
+  widget; an operator that was no longer valid left the filter select empty; and a 404
+  on the exact path `/api` answered with HTML instead of the error envelope.
+- **`from` defaults to `to - 24h`** when only `to` is given, because a query over a
+  closed past interval would otherwise be empty. `to` alone means `to = now`.
+- **`INVALID_UNIT` and `INVALID_GROUP_BY` were added** to the error contract: a code
+  that does not exist yet would have produced a generic message, and every failure in
+  this system must be explicit.
+- **The `last` aggregation of a bool metric returns a JSON boolean** and bool tags are
+  compared as the text `true`/`false`, matching how ingestion stores them.
+
+## Remaining work
+
+- The UI has NOT been verified in a browser. `docs/MANUAL_VERIFICATION.md` lists the
+  13 steps a human must follow: chart rendering for the four chart types, `group_by`
+  producing one series per tag value, every filter operator, the drag & drop reorder
+  surviving a reload, and the error surfaces.
+- No push, no pull request and no merge: those remain the user's decisions under
+  ordinary repository policy.
+- The MariaDB path is proven only by the offline DDL rendering and by dialect-portable
+  code. It has not been exercised against a live MariaDB server.
