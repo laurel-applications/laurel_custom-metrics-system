@@ -31,7 +31,19 @@ def create_app(config: Mapping[str, Any] | None = None) -> Flask:
     # The instance folder holds the development SQLite database.
     os.makedirs(app.instance_path, exist_ok=True)
 
-    database_url = os.environ.get("DATABASE_URL") or default_database_url(app.instance_path)
+    # Usamos la URL del entorno (la fija el Dockerfile); si no viene, construimos
+    # una por defecto segura sobre el directorio instance (que Flask crea automáticamente).
+    if os.environ.get("DATABASE_URL"):
+        database_url = os.environ["DATABASE_URL"]
+    else:
+        # Fallback: aseguramos que exista el folder y usemos SQLite en archivo.
+        try:
+            instance_path = Path(app.instance_path)
+            instance_path.mkdir(parents=True, exist_ok=True)
+            database_url = f"sqlite:///{instance_path}/metrics.db"
+        except Exception:
+            # Último recurso: SQLite en memoria para que la app inicie.
+            database_url = "sqlite://"
 
     app.config.from_mapping(
         DATABASE_URL=database_url,

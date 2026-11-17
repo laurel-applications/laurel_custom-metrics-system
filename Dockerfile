@@ -13,4 +13,6 @@ COPY . .
 
 EXPOSE 8000
 
+ENV DATABASE_URL="sqlite:////app/instance/metrics.db"
+
 CMD ["gunicorn", "-b", "0.0.0.0:8000", "app:create_app"]
