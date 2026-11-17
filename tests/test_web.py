@@ -18,7 +18,7 @@ from flask.testing import FlaskClient
 from sqlalchemy import select
 
 from app.extensions import db
-from app.models import Dashboard, Widget
+from app.models import Dashboard, Metric, Widget
 
 #: A timestamp inside the last hour, so the widget time ranges cover it.
 NOW_MS = 1_700_000_000_000
@@ -190,10 +190,101 @@ def test_create_widget_persists_filters_and_position(
     assert widget.position == 0
 
     stored_config = json.loads(widget.filters)
-    assert stored_config["group_by"] is None
-    assert stored_config["filters"] == [
-        {"field": "value", "op": ">", "value": 10}
+    assert widget.group_by is None
+    assert stored_config == [{"field": "value", "op": ">", "value": 10}]
+
+
+def test_create_widget_stores_the_group_by_in_its_own_column(
+    app: Flask, client: FlaskClient
+) -> None:
+    """The group by is a column of its own and the filters stay a bare array."""
+    ingest(client)
+    dashboard_id = create_dashboard(client)
+
+    response = client.post(
+        f"/dashboards/{dashboard_id}/widgets",
+        data=widget_form(
+            group_by="host",
+            filters=json.dumps([{"field": "tags.host", "op": "=", "value": "web-1"}]),
+        ),
+    )
+    assert response.status_code == 303
+
+    widget = widgets_of(app, dashboard_id)[0]
+    assert widget.group_by == "host"
+    # The filters column holds the bare array, exactly as the query API
+    # expects it: no wrapper object, no group_by key.
+    assert json.loads(widget.filters) == [
+        {"field": "tags.host", "op": "=", "value": "web-1"}
     ]
+
+
+def test_widget_with_group_by_round_trips_through_the_dashboard(
+    app: Flask, client: FlaskClient
+) -> None:
+    """The group by survives the creation and shows up on the dashboard."""
+    ingest(client)
+    dashboard_id = create_dashboard(client)
+
+    client.post(
+        f"/dashboards/{dashboard_id}/widgets",
+        data=widget_form(title="Per host", group_by="host"),
+    )
+
+    detail = client.get(f"/dashboards/{dashboard_id}")
+    assert detail.status_code == 200
+    html = detail.get_data(as_text=True)
+
+    # The value is visible on the page...
+    assert "by host" in html
+    # ...and it reaches the front end, which sends it to the query API.
+    assert '"group_by": "host"' in html
+
+    stored = widgets_of(app, dashboard_id)[0]
+    assert stored.group_by == "host"
+
+
+def test_legacy_widget_document_still_exposes_its_group_by(
+    app: Flask, client: FlaskClient
+) -> None:
+    """A widget written before the migration is still read correctly.
+
+    The legacy document kept the group by inside the ``filters`` column; a
+    database that was not migrated yet must keep working.
+    """
+    ingest(client)
+    dashboard_id = create_dashboard(client)
+
+    with app.app_context():
+        db.session.add(
+            Widget(
+                dashboard_id=dashboard_id,
+                metric_id=db.session.execute(
+                    select(Metric).where(Metric.name == "requests")
+                ).scalar_one().id,
+                title="Legacy",
+                chart_type="line",
+                agg="sum",
+                bucket_sec=None,
+                time_range="24h",
+                group_by=None,
+                filters=json.dumps(
+                    {
+                        "group_by": "host",
+                        "filters": [{"field": "value", "op": ">", "value": 1}],
+                    }
+                ),
+                position=0,
+                created_at_ms=NOW_MS,
+            )
+        )
+        db.session.commit()
+
+    detail = client.get(f"/dashboards/{dashboard_id}")
+    assert detail.status_code == 200
+    html = detail.get_data(as_text=True)
+    assert "by host" in html
+    assert '"group_by": "host"' in html
 
 
 def test_second_widget_takes_the_next_position(

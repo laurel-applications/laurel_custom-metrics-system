@@ -24,7 +24,7 @@
         type="text"
         data-role="filter-value"
         name="filter_value"
-        value="{{ value if value is not none else '' }}"
+        value="{{ value | filtervalue }}"
       />
     </label>
 

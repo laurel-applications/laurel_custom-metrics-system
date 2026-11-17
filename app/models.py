@@ -89,6 +89,11 @@ class Widget(Base):
     agg: Mapped[str] = mapped_column(String(20), nullable=False)
     bucket_sec: Mapped[int | None] = mapped_column(Integer, nullable=True)
     time_range: Mapped[str] = mapped_column(String(20), nullable=False)
+    #: The tag key the widget groups by, or ``None`` when it does not group.
+    #: It lives in its own column because it is a first class configuration
+    #: value, not part of the filter document.
+    group_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    #: The JSON array of filter objects, exactly as the query API expects it.
     filters: Mapped[str | None] = mapped_column(Text, nullable=True)
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)

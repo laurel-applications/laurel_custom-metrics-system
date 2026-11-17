@@ -240,31 +240,32 @@ def validate_filters(raw: Any, metric_type: str) -> tuple[str, list[dict[str, An
     return json.dumps(normalized, ensure_ascii=False), normalized
 
 
-def serialize_widget_config(
-    group_by: str | None, filters_json: str
-) -> str:
-    """Return the JSON document stored in ``Widget.filters``.
+def serialize_widget_filters(filters_json: str) -> str:
+    """Return the JSON array stored in ``Widget.filters``.
 
-    The ``widgets`` table has no ``group_by`` column, and the schema of this
-    task must not change, so the whole configuration of a widget lives in the
-    single JSON document of the ``filters`` column: the ``group_by`` key next
-    to the ``filters`` array.  Every filter object of the array is stored
-    verbatim, exactly as the filter contract describes it.
+    The ``filters`` column holds the bare array of filter objects, exactly
+    the shape the query API expects, so a widget is replayable without any
+    translation.  The group by lives in its own column.
     """
     try:
         filters = json.loads(filters_json) if filters_json else []
     except json.JSONDecodeError:  # pragma: no cover - the value is validated before
         filters = []
 
-    document = {"group_by": group_by, "filters": filters}
-    return json.dumps(document, ensure_ascii=False)
+    if not isinstance(filters, list):  # pragma: no cover - defensive
+        filters = []
+
+    return json.dumps(filters, ensure_ascii=False)
 
 
 def read_widget_config(raw: str | None) -> dict[str, Any]:
-    """Return the configuration stored in ``Widget.filters``.
+    """Return the configuration stored in the legacy ``filters`` document.
 
-    A bare JSON array is accepted as well, so a document written before the
-    ``group_by`` key existed keeps working (it simply has no grouping).
+    Before the ``group_by`` column existed the whole configuration of a
+    widget was stored as a JSON object with a ``group_by`` key next to the
+    ``filters`` array.  That shape is still understood when reading, so a
+    database that was not migrated yet keeps working; a bare JSON array is
+    the normal shape now.
     """
     if not raw or not raw.strip():
         return {"group_by": None, "filters": []}
@@ -286,6 +287,23 @@ def read_widget_config(raw: str | None) -> dict[str, Any]:
         }
 
     return {"group_by": None, "filters": []}
+
+
+def widget_settings(widget: Any) -> dict[str, Any]:
+    """Return the ``group_by`` and the filters of a stored widget.
+
+    The ``group_by`` column is the source of truth.  The legacy document is
+    only consulted when the column is empty, which keeps a database that has
+    not been migrated yet readable.
+    """
+    legacy = read_widget_config(getattr(widget, "filters", None))
+    column = getattr(widget, "group_by", None)
+
+    group_by = column if isinstance(column, str) and column.strip() else None
+    if group_by is None:
+        group_by = legacy["group_by"]
+
+    return {"group_by": group_by, "filters": legacy["filters"]}
 
 
 def validate_bucket(raw: Any) -> int | None:

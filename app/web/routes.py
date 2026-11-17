@@ -107,7 +107,7 @@ def _widget_rows(dashboard_id: int) -> list[dict[str, Any]]:
 
     widgets: list[dict[str, Any]] = []
     for widget, metric in rows:
-        config = validation.read_widget_config(widget.filters)
+        config = validation.widget_settings(widget)
         widgets.append(
             {
                 "id": widget.id,
@@ -248,7 +248,7 @@ def _render_widget_form(
 
     if widget is not None:
         metric = db.session.get(Metric, widget.metric_id)
-        config = validation.read_widget_config(widget.filters)
+        config = validation.widget_settings(widget)
         form_values.update(
             {
                 "title": widget.title,
@@ -326,7 +326,9 @@ def _parse_widget_form(form: Mapping[str, Any], metric: Metric) -> dict[str, Any
         "bucket_sec": bucket_sec,
         "time_range": time_range,
         "group_by": group_by,
-        "filters": validation.serialize_widget_config(group_by, filters_json),
+        # The filters are stored as the bare array the query API expects, and
+        # the group by in its own column.
+        "filters": validation.serialize_widget_filters(filters_json),
     }
 
 
@@ -356,6 +358,23 @@ def _json_value(value: Any) -> str:
         return json.dumps(value, ensure_ascii=False)
     except (TypeError, ValueError):  # pragma: no cover - defensive
         return str(value)
+
+
+@bp.app_template_filter("filtervalue")
+def _filter_value(value: Any) -> str:
+    """Render a filter value for the text input of the form.
+
+    A list is rendered as its comma separated bounds (the form of the
+    ``between`` operator) and a boolean as the word the ingestion stores, so
+    the input always holds something the front end can read back.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, (list, tuple)):
+        return ", ".join(str(item) for item in value)
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
 
 
 @bp.get("/")
@@ -431,6 +450,7 @@ def widget_create(dashboard_id: int) -> Any:
         agg=parsed["agg"],
         bucket_sec=parsed["bucket_sec"],
         time_range=parsed["time_range"],
+        group_by=parsed["group_by"],
         filters=parsed["filters"],
         position=_next_position(dashboard.id),
         created_at_ms=_now_ms(),
@@ -474,6 +494,7 @@ def widget_update(widget_id: int) -> Any:
     widget.agg = parsed["agg"]
     widget.bucket_sec = parsed["bucket_sec"]
     widget.time_range = parsed["time_range"]
+    widget.group_by = parsed["group_by"]
     widget.filters = parsed["filters"]
     db.session.commit()
 
