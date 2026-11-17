@@ -527,6 +527,7 @@ def test_tags_endpoint_of_an_unknown_metric(client: FlaskClient) -> None:
         "/dashboards/4242",
         "/widgets/4242/edit",
         "/metrics/nope",
+        "/there-is-no-such-page",
     ],
 )
 def test_every_html_error_page_shows_code_message_and_hint(
@@ -543,3 +544,78 @@ def test_every_html_error_page_shows_code_message_and_hint(
     assert "NOT_FOUND" in html or "DASHBOARD_NOT_FOUND" in html or "WIDGET_NOT_FOUND" in html
     # The hint must be visible, not hidden behind a tooltip.
     assert "href=" in html or "Back to the dashboards" in html
+
+
+def test_the_api_prefix_answers_with_the_envelope(client: FlaskClient) -> None:
+    """A 404 under the API prefix is JSON, even without the trailing slash.
+
+    The prefix is what tells the error contract that the caller is an API
+    client, so it must not depend on the exact spelling of the path.
+    """
+    for path in ("/api", "/api/does-not-exist"):
+        response = client.get(path)
+        assert response.status_code == 404, path
+        assert response.content_type.startswith("application/json"), path
+
+        payload = response.get_json()
+        assert payload["error"]["code"] == "NOT_FOUND"
+        assert payload["error"]["message"]
+        assert payload["error"]["hint"]
+
+
+def test_html_error_page_of_a_wrong_method_shows_the_contract(
+    client: FlaskClient,
+) -> None:
+    """A wrong method produces an explicit page, not a bare Werkzeug answer."""
+    # The widget form is only served with GET, so a POST is a wrong method.
+    response = client.post("/dashboards/1/widgets/new")
+    assert response.status_code == 405
+    html = response.get_data(as_text=True)
+
+    assert "METHOD_NOT_ALLOWED" in html
+    assert "data-error-field=\"message\"" in html
+    assert "data-error-field=\"hint\"" in html
+    # The protocol level hint of Werkzeug survives the translation.
+    assert response.headers.get("Allow")
+
+
+def test_catch_all_handler_answers_the_api_with_the_envelope(
+    app: Flask, client: FlaskClient
+) -> None:
+    """An unexpected crash answers with the canonical envelope, no traceback."""
+
+    @app.get("/api/boom")
+    def _boom() -> Any:
+        raise RuntimeError("the database is on fire")
+
+    response = client.get("/api/boom")
+    assert response.status_code == 500
+
+    payload = response.get_json()
+    assert payload["error"]["code"] == "INTERNAL_ERROR"
+    assert payload["error"]["message"]
+    assert payload["error"]["hint"]
+
+    body = response.get_data(as_text=True)
+    assert "the database is on fire" not in body
+    assert "Traceback" not in body
+
+
+def test_catch_all_handler_answers_the_ui_with_a_rendered_page(
+    app: Flask, client: FlaskClient
+) -> None:
+    """An unexpected crash on an HTML route renders the error page."""
+
+    @app.get("/boom")
+    def _boom() -> Any:
+        raise RuntimeError("the database is on fire")
+
+    response = client.get("/boom")
+    assert response.status_code == 500
+    html = response.get_data(as_text=True)
+
+    assert "INTERNAL_ERROR" in html
+    assert "data-error-field=\"message\"" in html
+    assert "data-error-field=\"hint\"" in html
+    assert "the database is on fire" not in html
+    assert "Traceback" not in html

@@ -133,7 +133,13 @@
       ["Field", envelope.field],
       ["Expected", envelope.expected],
       ["Received", envelope.received],
-      ["Hint", envelope.hint]
+      // The hint is never left empty: a widget that fails without an
+      // explanation is a widget the user cannot act on.
+      [
+        "Hint",
+        envelope.hint ||
+          "Check the server logs for the full traceback and retry the request."
+      ]
     ];
 
     fields.forEach(function (entry) {
@@ -425,6 +431,16 @@
           renderError(body, envelope, "The query failed with HTTP " + result.status + ".");
           return;
         }
+        if (!result.data) {
+          // A successful answer that is not JSON cannot be rendered: the
+          // widget shows the error instead of staying on the placeholder.
+          renderError(
+            body,
+            null,
+            "The server answered with an unreadable body (HTTP " + result.status + ")."
+          );
+          return;
+        }
         if (config.chart_type === "table") {
           renderTable(body, config, result.data);
         } else if (config.chart_type === "stat") {
@@ -581,11 +597,25 @@
     }
   }
 
-  function readRow(row) {
+  /* Return the number a text holds, or null when it does not hold one. */
+  function toNumber(text) {
+    if (typeof text !== "string") {
+      return null;
+    }
+    var trimmed = text.trim();
+    if (!/^-?\d+(\.\d+)?$/.test(trimmed)) {
+      return null;
+    }
+    var number = Number(trimmed);
+    return isFinite(number) ? number : null;
+  }
+
+  function readRow(row, metricType) {
     var field = row.querySelector('[data-role="filter-field"]').value;
     var op = row.querySelector('[data-role="filter-op"]').value;
     var raw = row.querySelector('[data-role="filter-value"]').value;
     var value = raw;
+    var kind = fieldKind(field, metricType);
 
     if (op === "between") {
       var bounds = String(raw)
@@ -596,11 +626,20 @@
         .filter(function (part) {
           return part.length > 0;
         });
-      value = bounds.map(Number);
+      // A bound that is not a number is kept as text: the server then answers
+      // with the explicit INVALID_FILTER_VALUE error instead of the browser
+      // silently sending a null.
+      value = bounds.map(function (part) {
+        var number = toNumber(part);
+        return number === null ? part : number;
+      });
     } else if (op === "is_true" || op === "is_false") {
       value = null;
-    } else if (raw !== "" && /^-?\d+(\.\d+)?$/.test(raw)) {
-      value = Number(raw);
+    } else if (kind === "numeric") {
+      // Only a numeric field carries a number.  A textual field keeps its
+      // text even when it looks like a number: "10" is not 10.
+      var number = toNumber(raw);
+      value = number === null ? raw : number;
     }
 
     return { field: field, op: op, value: value };
@@ -613,8 +652,9 @@
     }
     var rows = form.querySelectorAll('[data-role="filter-row"]');
     var filters = [];
+    var metricType = currentMetricType(form);
     Array.prototype.forEach.call(rows, function (row) {
-      filters.push(readRow(row));
+      filters.push(readRow(row, metricType));
     });
     textarea.value = JSON.stringify(filters);
   }
@@ -684,7 +724,15 @@
     applyFieldOptions(form, row, metricType, tagKeys);
 
     if (filter && filter.op) {
-      opSelect.value = filter.op;
+      // The operator is only restored when it is still valid for the field:
+      // assigning an unknown value to a select leaves it empty, which would
+      // send an empty operator to the server.
+      var known = Array.prototype.some.call(opSelect.options, function (option) {
+        return option.value === filter.op;
+      });
+      if (known) {
+        opSelect.value = filter.op;
+      }
     }
 
     remove.addEventListener("click", function () {

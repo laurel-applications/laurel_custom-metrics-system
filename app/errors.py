@@ -120,7 +120,7 @@ def wants_json(req: Request) -> bool:
     when the client explicitly asks for it, because a browser navigating to a
     URL must get a readable page instead of a raw JSON blob.
     """
-    if req.path.startswith("/api/"):
+    if req.path == "/api" or req.path.startswith("/api/"):
         return True
 
     accept = req.headers.get("Accept", "")
