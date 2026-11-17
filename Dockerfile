@@ -19,4 +19,4 @@ ENV DATABASE_URL="sqlite:////app/instance/metrics.db"
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD curl -f http://localhost:80/health || exit 1
 
-CMD ["gunicorn", "-b", "0.0.0.0:80", "app:create_app"]
+CMD gunicorn -b 0.0.0.0:80 --timeout 120 app:create_app
