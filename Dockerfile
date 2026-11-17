@@ -15,7 +15,7 @@ COPY . .
 EXPOSE 80
 
 ENV DATABASE_URL="sqlite:////app/instance/metrics.db"
-
+    
 CMD ["gunicorn", \
      "--bind", "0.0.0.0:80", \
      "--workers", "2", \

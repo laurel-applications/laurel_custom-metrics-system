@@ -1,386 +1,178 @@
-#!/usr/bin/env python3
-"""Send a temperature reading every second to a Laurel Metrics deployment.
+#!/usr name of the repository. The current branch is `master` and it MUST stay `master` (the user asked for the feature on the same master branch). Do NOT create another branch, do NOT merge, do NOT push.
 
-The script only uses the Python standard library, so it runs anywhere Python
-3.9 or newer is available, with no ``pip install`` step.
+## Skills to load before work
 
-It also prepares the destination by using the HTTP API:
+Read these exact files BEFORE any task-specific work:
 
-1. It creates the dashboard when it does not exist yet.
-2. It creates a widget for the temperature metric when the dashboard has none.
-3. It pushes one data point per interval.
+- `/home/lobaton/.config/opencode/skills/work-unit-commits/SKILL.md`
+- `/home/lobaton/.config/opencode/skills/cognitive-doc-design/SKILL.md`
 
-Usage::
+## Read first
 
-    python scripts/temperature_sender.py --base-url https://metrics.example.com
+Read `odd/tasks/metrics-raw-browser.md` in full. It is the source of truth for the objective, scope, decisions, tasks, acceptance criteria and checks. Follow it exactly.
 
-    # Send exactly 30 readings, five seconds apart.
-    python scripts/temperature_sender.py --base-url https://metrics.example.com \
-        --count 30 --interval 5
-"""
+## TDD mode
 
-from __future__ import annotations
+TDD mode is OFF (standard mode). Write the behavior and its tests together, then run the checks. Do not attempt a strict RED-first cycle.
 
-import argparse
-import json
-import math
-import random
-import re
-import signal
-import sys
-import time
-import urllib.error
-import urllib.parse
-import urllib.request
-from datetime import datetime, timezone
+## Test runner
 
-DEFAULT_BASE_URL = "https://metrics.andreslobaton.top"
-DEFAULT_METRIC = "temperature"
-DEFAULT_DASHBOARD = "temperature"
-DEFAULT_INTERVAL = 1.0
-USER_AGENT = "laurel-temperature-sender/1.0"
+`.venv/bin/python -m pytest -q` (from the repository root).
 
-#: The dashboard list renders one link per dashboard: ``/dashboards/1`` + name.
-DASHBOARD_LINK = re.compile(r'href="/dashboards/(\d+)"[^>]*>\s*([^<]*?)\s*</a', re.S)
+## What you must build
 
-#: The widget grid stores the whole configuration in a ``data-config`` attribute.
-WIDGET_CONFIG = re.compile(r"data-config='([^']*)'")
+Three work units, each ending in its own commit with a Conventional Commit message.
 
+### T1 — Raw service and JSON API
 
-class ApiError(RuntimeError):
-    """Raised when the server answers with an error."""
+New package `app/raw/`:
 
+- `app/raw/service.py`
+  - `RawPoint` dataclass: `id`, `ts_ms`, `received_at_ms`, `value` (typed by metric type: number for counter/gauge/timer, the text for string, a real boolean for bool), `tags` (decoded dict).
+  - `list_points(metric, from_ms, to_ms, limit, offset, order)` → `(list[RawPoint], total)`. The pagination MUST happen in SQL with `.limit()` / `.offset()`; never materialize the whole window. Order by `ts_utc_ms` then `id`, `desc` by default, `asc` when asked.
+  - `count_points(metric_id, from_ms, to_ms)` → int, with the same filters.
+  - `latest_id(metric_id)` → int | None.
+  - `wait_for_points(metric_id, since_id, from_ms, to_ms, timeout_s)` → `(list[RawPoint], waited_ms)`. It holds the request open until a point with `id > since_id` exists inside the range, polling in short sleeps (≈100 ms) until the timeout elapses. The id is the watermark because the auto increment id is monotonic, so no point is missed nor repeated.
+  - `to_csv(points)` → CSV text. Header: `id,ts_utc,received_at_utc,value,tags`. Timestamps as ISO-8601 UTC. Tags as compact JSON.
+  - The value typing by metric type: the point does NOT carry the type, so the service must be given the `Metric` row. A boolean point stores BOTH `value_num` (1.0/0.0) and `value_str` ("true"/"false") — expose a real boolean.
 
-class _Stop(Exception):
-    """Raised when the user interrupts the sender."""
+- `app/raw/routes.py`
+  - `bp = Blueprint("raw", __name__, url_prefix="/api")`
+  - `GET /api/raw` — paginated points.
+    Query: `metric` (required), `from` (optional), `to` (optional), `limit` (optional, default 50, max 500), `offset` (optional, default 0), `order` (optional, `desc` default, `asc` allowed).
+    Response 200:
+    ```json
+    {"metric": {"id": 1, "name": "temperature", "type": "gauge", "unit": "C"},
+     "from_ms": 1794805726546, "to_ms": 1794892126546,
+     "order": "desc", "total": 68, "limit": 50, "offset": 0, "latest_id": 68,
+     "points": [{"id": 68, "ts_ms": 1794892126546, "received_at_ms": 1794892126546, "value": 24.5, "tags": {"sensor": "ambient"}}]}
+    ```
+  - `GET /api/raw/wait` — the long poll.
+    Query: `metric` (required), `since_id` (optional, default 0), `from`, `to`, `timeout` (optional seconds, default 2, max 10).
+    Response 200: `{"metric": {...}, "latest_id": 68, "waited_ms": 2000, "points": [...]}` with an empty `points` list when nothing arrived before the timeout.
 
+- Register the blueprint in `app/__init__.py` (`BLUEPRINTS` tuple) so the app serves it.
 
-def _request(
-    method: str,
-    url: str,
-    *,
-    data: bytes | None = None,
-    headers: dict[str, str] | None = None,
-    timeout: float = 15.0,
-) -> tuple[int, str, str]:
-    """Perform an HTTP request and return ``(status, body, final_url)``."""
-    request = urllib.request.Request(url, data=data, method=method)
-    request.add_header("User-Agent", USER_AGENT)
-    for key, value in (headers or {}).items():
-        request.add_header(key, value)
+- `tests/test_raw.py` — a new file with the tests of this work unit.
 
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            body = response.read().decode("utf-8", "replace")
-            return response.status, body, response.geturl()
-    except urllib.error.HTTPError as error:
-        body = error.read().decode("utf-8", "replace")
-        return error.code, body, error.geturl()
-    except urllib.error.URLError as error:
-        raise ApiError(f"could not reach {url}: {error.reason}") from error
+Error contract, reuse the existing machinery:
+- Unknown metric → `404 METRIC_NOT_FOUND`.
+- `from >= to` → `400 INVALID_TIME_RANGE` (the code already exists in `app/query/routes.py`).
+- Negative `offset` → `400 INVALID_PAGE`.
+- `limit` below 1 or above 500 → `400 INVALID_PAGE_SIZE`.
+- `order` outside `asc`/`desc` → `400 INVALID_ORDER`.
+- `timeout` above 10 → `400 INVALID_TIMEOUT`.
+Every error MUST carry all six envelope keys (`code`, `message`, `field`, `expected`, `received`, `hint`) with a non-empty hint.
 
+### T2 — Page, picker, pagination and live updates
 
-def _fail_for_status(status: int, body: str, url: str) -> None:
-    """Turn an HTTP error into an :class:`ApiError` with the server envelope."""
-    if status < 400:
-        return
+- `app/web/routes.py`
+  - `GET /metrics/<metric_name>/raw` — the page. Accepts `range` (quick relative range), `from`, `to`, `page`, `size`. It renders the picker with the current selection AND the first page of rows server-side, so the page works before the JavaScript runs.
+  - `GET /metrics/<metric_name>/raw.csv` — the download. Same range parameters as the page, no pagination. It answers EVERY point of the range with `Content-Type: text/csv` and a `Content-Disposition` attachment. If the range holds more than 10000 points, answer `400 EXPORT_TOO_LARGE` with the envelope.
+- `app/templates/raw_data.html` — the page. It extends `base.html` and imports `error_block` from `_error_block.html`.
+- `app/static/raw.js` — the behaviour. Register it in `app/templates/base.html` with `url_for('static', filename='raw.js')`; otherwise it never loads.
+- `app/static/style.css` — the styles the new page needs, reusing the existing class vocabulary and CSS variables. Do NOT introduce new colours.
+- `app/web/validation.py` — extend `TIME_RANGES` with `5m` and `15m` (keep the existing ones).
+- `app/static/app.js` — extend the `RANGE_MS` map with `5m` and `15m`, so the front end and the server agree.
+- Links: every widget in `app/templates/dashboard.html` gets a link to the raw page of its metric, and every row of `app/templates/metrics.html` gets one too.
 
-    code: object = status
-    message = "the server rejected the request"
-    try:
-        payload = json.loads(body)
-        envelope = payload.get("error", {}) if isinstance(payload, dict) else {}
-        code = envelope.get("code", code)
-        message = envelope.get("message", message)
-    except (ValueError, AttributeError):
-        pass
+The picker must offer:
+- Quick relative ranges: `5m`, `15m`, `1h`, `6h`, `24h`, `7d`, `30d`.
+- A custom absolute range with a start and an end (`datetime-local` inputs).
+- A refresh interval selector: `off`, `2s`, `5s`, `10s`, `30s`, `1m`.
+- The current selection is reflected in the controls.
 
-    raise ApiError(f"HTTP {status} {code}: {message} ({url})")
+The table must show the columns: timestamp of the measurement, value, tags, received at, and the id.
 
+Behaviour:
+- Changing the range, the page size or the metric reloads the table.
+- A refresh button reloads the table on demand.
+- With a refresh interval of two seconds, the page holds the long poll open and the new points appear in the table WITHOUT a manual reload. Use a `setTimeout` recursion, NOT `setInterval`, so two requests never overlap. The default refresh interval is `2s`.
+- The relative ranges are resolved against the BROWSER clock, exactly like the widget time range already does.
+- A live indicator shows the last update time and how many new points arrived.
 
-def post_json(base_url: str, path: str, payload: dict) -> dict:
-    """Send a JSON body to the API and return the decoded answer."""
-    url = f"{base_url}{path}"
-    body = json.dumps(payload).encode("utf-8")
-    status, text, _ = _request(
-        "POST", url, data=body, headers={"Content-Type": "application/json"}
-    )
-    _fail_for_status(status, text, url)
-    return json.loads(text) if text.strip() else {}
+### T3 — Documentation
 
+- `README.md`: the new page in the web UI section, the two new API endpoints, the new error codes in the error table, and the new time ranges where the ranges are listed.
+- `docs/MANUAL_VERIFICATION.md`: the manual steps of the new page (open it, change the range, paginate, refresh, watch the live updates, download the CSV).
 
-def post_form(base_url: str, path: str, fields: dict[str, str]) -> str:
-    """Send a form encoded body and return the URL the server redirected to."""
-    url = f"{base_url}{path}"
-    body = urllib.parse.urlencode(fields).encode("utf-8")
-    status, text, final_url = _request(
-        "POST",
-        url,
-        data=body,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-    )
-    _fail_for_status(status, text, url)
-    return final_url
+## Conventions you MUST follow
 
+This codebase has strict conventions. Match them exactly.
 
-def get_text(base_url: str, path: str) -> str:
-    """Return the body of a GET request."""
-    url = f"{base_url}{path}"
-    status, text, _ = _request("GET", url)
-    _fail_for_status(status, text, url)
-    return text
+**Python**
+- `from __future__ import annotations` at the top of every module.
+- Module docstring explaining WHY, not what. Every function has a docstring; private helpers start with an imperative verb ("Return …").
+- Type hints everywhere. Constants are UPPER_SNAKE at the module top with a `#:` comment.
+- Private helpers are `_snake_case` module functions.
+- Never `abort()`. Never a bare `raise ValueError` in a route. Raise `ApiError(code, message, field=..., expected=..., received=..., hint=...)`.
+- The JSON endpoints MUST live under the `/api` path so the shared error handler answers JSON instead of HTML.
+- The relative ranges resolve against the browser clock, like the existing widget time range.
 
+**Templates**
+- `{% extends "base.html" %}` + `{% from "_error_block.html" import error_block %}`; override only `title` and `content`.
+- Structure: `section.panel` → `div.panel-head` (`h1.page-title`, `p.page-subtitle`, `div.panel-actions`) → `error_block` → content → `div.empty-state` for the empty case.
+- Timestamps via `{{ value | ts }}`. Errors via `{{ error.expected | jvalue }}`.
+- Hooks for JavaScript use `data-role="..."`. JSON to JS via `data-config='{{ ... | tojson }}'`.
+- The CSS classes that already exist and must be reused: `.panel`, `.panel-head`, `.page-title`, `.page-subtitle`, `.panel-actions`, `.split`, `.split-main`, `.split-side`, `.muted`, `.table`, `.table th`, `.table td`, `.table .num`, `.form`, `.form-grid`, `.field`, `.field-label`, `.field-hint`, `.actions`, `.button`, `.button-ghost`, `.button-danger`, `.button-small`, `.error-block`, `.error-code`, `.error-fields`, `.empty-state`, `.widget-error`, `.grid-status`, `.grid-status.is-error`, `.code-block`.
 
-def find_dashboard(base_url: str, name: str) -> int | None:
-    """Return the id of the dashboard called ``name``, or ``None``."""
-    page = get_text(base_url, "/dashboards")
-    for dashboard_id, label in DASHBOARD_LINK.findall(page):
-        if label.strip() == name:
-            return int(dashboard_id)
-    return None
+**JavaScript** (`app/static/raw.js`)
+- A separate file, one IIFE, `"use strict"`, ES5 only (`var`, `function`), no modules, no build step.
+- Build the DOM with `document.createElement` and `textContent`. NEVER `innerHTML`.
+- `fetch` with `Accept: application/json`; unwrap the envelope as `result.data.error`.
+- Every failure renders a visible error block with the code and the fields. Never leave a placeholder.
+- Guard the globals: `if (typeof Chart === "undefined")`.
+- Timestamps formatted as `YYYY-MM-DD HH:MM:SS UTC`.
 
+**Tests**
+- One file per concern. Only the `app` and `client` fixtures from `tests/conftest.py`.
+- Create data points with a local `insert_points(...)` helper modeled on the one in `tests/test_query.py` (creates the `Metric` if missing and inserts `DataPoint` rows with `ts_utc_ms`, `value_num`, `value_str`, `tags` as `json.dumps`, `received_at_ms`).
+- Assert on the rendered HTML for the UI (`response.get_data(as_text=True)`) and on the envelope for the API. The envelope assertion helper pattern is in `tests/test_query.py`: the payload has exactly `{"error"}` and the error has exactly the six keys.
+- Every new failure path gets a test that asserts the code, the message and the hint are visible.
 
-def create_dashboard(base_url: str, name: str) -> int:
-    """Create a dashboard through the API and return its id."""
-    final_url = post_form(base_url, "/dashboards", {"name": name})
-    match = re.search(r"/dashboards/(\d+)", final_url)
-    if not match:
-        raise ApiError(f"the dashboard was created but its id is unknown ({final_url})")
-    return int(match.group(1))
+## Gotchas that will bite you
 
+1. There is NO existing pagination, LIMIT/OFFSET or CSV code in this repository. You are inventing both patterns.
+2. The metric type is NOT on the point. You must join `Metric` to decide how to render the value. A boolean point stores BOTH representations.
+3. `tags` is a JSON string in a TEXT column. Malformed JSON must degrade to `{}`, never crash.
+4. `received_at_ms` is the ingestion time and `ts_utc_ms` is the measurement time. A point can arrive long after its timestamp. Show both.
+5. The ordering of the table is by `ts_utc_ms` then `id`.
+6. Epoch seconds are silently wrong, not rejected. The picker must send epoch MILLISECONDS or ISO-8601.
+7. `5m` and `15m` do not exist yet in either `validation.TIME_RANGES` or the front end `RANGE_MS` map. Add both to both, or they disagree.
+8. There are NO timers in `app/static/` today. The long poll is the first recurring timer. A `setTimeout` recursion avoids overlapping requests.
+9. `base.html` is the only place scripts are loaded. A new script tag must be added there, otherwise it never runs.
+10. `app/templates/dashboard.html` renders each widget with `data-config='{{ widget.config | tojson }}'`; `_widget_rows` already exposes `metric_name` for the link.
+10. An empty result is NOT an error. Render an empty table, never an error block.
+11. `tests/conftest.py` builds the schema with `Base.metadata.create_all`, not Alembic. This feature needs NO migration. Confirm with `.venv/bin/alembic check` → `No new upgrade operations detected.`
 
-def dashboard_metrics(base_url: str, dashboard_id: int) -> set[str]:
-    """Return the metrics that already have a widget in the dashboard."""
-    page = get_text(base_url, f"/dashboards/{dashboard_id}")
-    metrics: set[str] = set()
-    for raw_config in WIDGET_CONFIG.findall(page):
-        # The attribute holds JSON with escaped quotes, so it is decoded first.
-        try:
-            config = json.loads(raw_config.replace("&#34;", '"'))
-        except ValueError:
-            continue
-        name = config.get("metric")
-        if isinstance(name, str):
-            metrics.add(name)
-    return metrics
+## Verification you must run and report
 
+Run each command and report the ACTUAL observed output:
 
-def create_widget(
-    base_url: str,
-    dashboard_id: int,
-    *,
-    title: str,
-    metric: str,
-    chart_type: str,
-    agg: str,
-    time_range: str,
-    bucket: str = "auto",
-    group_by: str = "",
-    filters: str = "[]",
-) -> None:
-    """Create a widget through the API."""
-    post_form(
-        base_url,
-        f"/dashboards/{dashboard_id}/widgets",
-        {
-            "title": title,
-            "metric": metric,
-            "chart_type": chart_type,
-            "agg": agg,
-            "bucket": bucket,
-            "time_range": time_range,
-            "group_by": group_by,
-            "filters": filters,
-        },
-    )
+```bash
+.venv/bin/python -m pytest -q
+.venv/bin/alembic check
+```
 
+If a command fails, fix the cause and rerun. Do not report success without the observed output.
 
-def query(base_url: str, metric: str, agg: str = "avg") -> dict:
-    """Run a query against the API and return the decoded answer."""
-    query_string = urllib.parse.urlencode({"metric": metric, "agg": agg})
-    url = f"{base_url}/api/query?{query_string}"
-    status, text, _ = _request("GET", url)
-    _fail_for_status(status, text, url)
-    return json.loads(text) if text.strip() else {}
+## Commits
 
+Three commits, one per work unit, Conventional Commit messages, no AI attribution and no `Co-Authored-By` trailer:
 
-def simulate_temperature(base: float, amplitude: float, period: float, tick: int) -> float:
-    """Return a plausible ambient temperature for the given tick."""
-    wave = base + amplitude * math.sin(tick / period * 2 * math.pi)
-    return round(wave + random.uniform(-0.15, 0.15), 2)
+1. `feat(raw): add the raw points API with pagination and long polling`
+2. `feat(web): add the raw data page with a dynamic time picker`
+3. `docs: document the raw data browser`
 
+Stage ONLY the files of that work unit. Never use `git add -A` blindly; stage explicit paths. Do NOT push.
 
-def parse_tags(raw_tags: list[str]) -> dict[str, str]:
-    """Turn ``key=value`` arguments into a tag dictionary."""
-    tags: dict[str, str] = {}
-    for raw in raw_tags:
-        key, separator, value = raw.partition("=")
-        if not separator or not key.strip():
-            raise SystemExit(f"invalid tag '{raw}', expected key=value")
-        tags[key.strip()] = value.strip()
-    return tags
+After each work unit, update `odd/tasks/metrics-raw-browser.md`: check the task box and record the commit id and the observed check output in the Progress table.
 
+## Final report
 
-def build_parser() -> argparse.ArgumentParser:
-    """Return the command line parser."""
-    parser = argparse.ArgumentParser(
-        description="Send a temperature reading every second to Laurel Metrics."
-    )
-    parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
-    parser.add_argument("--metric", default=DEFAULT_METRIC)
-    parser.add_argument("--type", default="gauge", choices=("gauge", "counter", "timer"))
-    parser.add_argument("--unit", default="C")
-    parser.add_argument("--dashboard", default=DEFAULT_DASHBOARD)
-    parser.add_argument("--title", default="Temperature")
-    parser.add_argument("--chart-type", default="line", choices=("line", "bar", "table", "stat"))
-    parser.add_argument("--agg", default="avg")
-    parser.add_argument("--time-range", default="1h")
-    parser.add_argument("--interval", type=float, default=DEFAULT_INTERVAL)
-    parser.add_argument(
-        "--count",
-        type=int,
-        default=0,
-        help="How many readings to send; 0 means run until interrupted.",
-    )
-    parser.add_argument(
-        "--value",
-        type=float,
-        default=None,
-        help="Send a fixed value instead of the simulated temperature.",
-    )
-    parser.add_argument("--base-temp", type=float, default=24.0)
-    parser.add_argument("--amplitude", type=float, default=3.5)
-    parser.add_argument(
-        "--period",
-        type=float,
-        default=60.0,
-        help="Seconds of the simulated wave; the default is one minute.",
-    )
-    parser.add_argument(
-        "--tag",
-        action="append",
-        default=[],
-        metavar="KEY=VALUE",
-        help="Tag attached to every point; can be repeated.",
-    )
-    parser.add_argument(
-        "--no-widget",
-        action="store_true",
-        help="Do not create the widget, only send the points.",
-    )
-    parser.add_argument(
-        "--verify",
-        action="store_true",
-        help="Query the metric once the sending loop finishes.",
-    )
-    return parser
-
-
-def main(argv: list[str] | None = None) -> int:
-    """Run the sender."""
-    args = build_parser().parse_args(argv)
-
-    base_url = args.base_url.rstrip("/")
-    tags = parse_tags(args.tag) or {"sensor": "ambient"}
-
-    def _interrupt(_signum: int, _frame: object) -> None:
-        raise _Stop()
-
-    signal.signal(signal.SIGINT, _interrupt)
-    signal.signal(signal.SIGTERM, _interrupt)
-
-    try:
-        print(f"Target: {base_url}")
-
-        # The metric has to exist before a widget can reference it, so the
-        # first reading is pushed before the dashboard is prepared.
-        first_value = (
-            args.value
-            if args.value is not None
-            else simulate_temperature(args.base_temp, args.amplitude, args.period, 0)
-        )
-        payload: dict[str, object] = {
-            "name": args.metric,
-            "type": args.type,
-            "value": first_value,
-            "tags": tags,
-        }
-        if args.unit:
-            payload["unit"] = args.unit
-
-        answer = post_json(base_url, "/api/ingest", payload)
-        print(f"Metric '{args.metric}' ready ({answer})")
-
-        dashboard_id = find_dashboard(base_url, args.dashboard)
-        if dashboard_id is None:
-            dashboard_id = create_dashboard(base_url, args.dashboard)
-            print(f"Dashboard '{args.dashboard}' created with id {dashboard_id}")
-        else:
-            print(f"Dashboard '{args.dashboard}' found with id {dashboard_id}")
-
-        if not args.no_widget:
-            if args.metric in dashboard_metrics(base_url, dashboard_id):
-                print(f"Widget for '{args.metric}' already exists")
-            else:
-                create_widget(
-                    base_url,
-                    dashboard_id,
-                    title=args.title,
-                    metric=args.metric,
-                    chart_type=args.chart_type,
-                    agg=args.agg,
-                    time_range=args.time_range,
-                )
-                print(f"Widget '{args.title}' created")
-
-        print(
-            f"Sending every {args.interval:g}s"
-            f"{'' if not args.count else f' ({args.count} readings)'}"
-        )
-
-        sent = 1
-        tick = 1
-        next_send = time.monotonic() + args.interval
-        while not args.count or sent < args.count:
-            time.sleep(max(0.0, next_send - time.monotonic()))
-            next_send += args.interval
-
-            value = (
-                args.value
-                if args.value is not None
-                else simulate_temperature(
-                    args.base_temp, args.amplitude, args.period, tick
-                )
-            )
-            point = {
-                "name": args.metric,
-                "type": args.type,
-                "value": value,
-                "tags": tags,
-            }
-            if args.unit:
-                point["unit"] = args.unit
-
-            post_json(base_url, "/api/ingest", point)
-            stamp = datetime.now(tz=timezone.utc).strftime("%H:%M:%S")
-            print(f"[{stamp}] {args.metric} = {value} {args.unit or ''}".rstrip())
-            sent += 1
-            tick += 1
-
-        print(f"Done. {sent} points sent.")
-
-        if args.verify:
-            result = query(base_url, args.metric, args.agg)
-            print(f"Query ({args.agg}): {json.dumps(result)[:600]}")
-
-        return 0
-    except _Stop:
-        print("\nInterrupted.")
-        return 130
-    except ApiError as error:
-        print(f"Error: {error}", file=sys.stderr)
-        return 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+Return ONE message with:
+1. The files created and modified, grouped by work unit.
+2. The three commit ids with their subjects.
+3. The exact observed output of `.venv/bin/python -m pytest -q` and `.venv/bin/alembic check`.
+3. The endpoint contracts you implemented (the query parameters and the response shape), so the parent can verify them.
+4. Anything you could not finish, and why.
