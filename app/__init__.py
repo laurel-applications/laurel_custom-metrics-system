@@ -68,3 +68,7 @@ def create_app(config: Mapping[str, Any] | None = None) -> Flask:
         return jsonify({"status": "ok"})
 
     return app
+
+
+# Instancia a nivel de módulo para que gunicorn pueda cargarla con `app:application`
+application = create_app()
