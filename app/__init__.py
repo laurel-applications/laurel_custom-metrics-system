@@ -11,11 +11,12 @@ from .config import default_database_url
 from .errors import register_error_handlers
 from .extensions import db
 from .ingest import bp as ingest_bp
+from .query import bp as query_bp
 
 #: Blueprints registered by the application.  T2 (ingestion), T3 (query) and
 #: T4 (web UI) add their own entry here; keeping the list explicit avoids
 #: import cycles between the factory and the packages it serves.
-BLUEPRINTS: tuple[Any, ...] = (ingest_bp,)
+BLUEPRINTS: tuple[Any, ...] = (ingest_bp, query_bp)
 
 
 def create_app(config: Mapping[str, Any] | None = None) -> Flask:

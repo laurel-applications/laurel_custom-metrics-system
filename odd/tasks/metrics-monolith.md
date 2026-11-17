@@ -151,7 +151,7 @@ learning a query language.
 | --- | --- | --- | --- |
 | T1 | delegated writer | done | `1ff66da` — app factory, models, Alembic initial migration; `alembic upgrade head` + `alembic check` clean on SQLite, `--sql` renders valid MariaDB DDL |
 | T2 | delegated writer | done | 33 pytest tests pass; curl smoke: 201 created / 409 METRIC_TYPE_MISMATCH / 400 INVALID_VALUE / 200 metrics list |
-| T3 | delegated writer | pending | — |
+| T3 | delegated writer | done | 75 pytest tests pass (42 new); curl smoke: auto bucket, explicit bucket, `group_by=host`, filters, string/bool metrics, 4 error envelopes verified |
 | T4 | delegated writer | pending | — |
 | T5 | delegated writer | pending | — |
 
