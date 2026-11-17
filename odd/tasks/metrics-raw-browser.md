@@ -108,7 +108,7 @@ Nothing else may be modified.
   widgets and the metrics overview, and the new ranges.
   *Route: delegated writer.*
   *Checks: `.venv/bin/python -m pytest -q`.*
-- [ ] **T3 — Documentation.** The README sections for the page, the two API
+- [x] **T3 — Documentation.** The README sections for the page, the two API
   endpoints and the new error codes; the manual verification steps.
   *Route: delegated writer.*
   *Checks: `.venv/bin/python -m pytest -q` and `.venv/bin/alembic check`.*
@@ -155,5 +155,5 @@ reviewable commits instead.
 | Task | Outcome | Evidence |
 | --- | --- | --- |
 | T1 | Implemented | Commit `648f4f0`. `.venv/bin/python -m pytest -q tests/test_raw.py` → `15 passed in 0.71s`; full suite → `134 passed in 13.40s`. |
-| T2 | Implemented | `.venv/bin/python -m pytest -q tests/test_raw.py tests/test_frontend.py` → `33 passed in 1.65s`; full suite → `148 passed in 12.03s`. Commit id is recorded after the commit. |
-| T3 | Pending | — |
+| T2 | Implemented | Commit `d82e9bb`. `.venv/bin/python -m pytest -q tests/test_raw.py tests/test_frontend.py` → `33 passed in 1.65s`; full suite → `148 passed in 12.03s`. |
+| T3 | Implemented | `.venv/bin/python -m pytest -q` → `148 passed in 12.64s`; `.venv/bin/alembic check` → `No new upgrade operations detected.` Commit id is recorded after the commit. |

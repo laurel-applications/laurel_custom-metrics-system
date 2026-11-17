@@ -2,8 +2,8 @@
 
 The automated suite covers the API, the rendered HTML and the migrations.
 What it **cannot** cover is what the pages actually *look* like in a browser:
-the charts, the drag & drop, the dynamic operator lists and the way an error
-is presented to a human.
+the charts, the drag & drop, the dynamic operator lists, the raw data picker
+and the way an error is presented to a human.
 
 This checklist is what a human must run, in a browser, to confirm the parts
 that were never visually verified. Work through it in order: every step
@@ -31,6 +31,13 @@ curl -s -X POST http://127.0.0.1:5000/api/ingest -H 'Content-Type: application/j
 curl -s -X POST http://127.0.0.1:5000/api/ingest -H 'Content-Type: application/json' \
   -d '{"name":"requests","type":"counter","value":5}'
 
+# Thirty more points, so the raw browser can be paginated.
+for value in $(seq 1 30); do
+  curl -s -X POST http://127.0.0.1:5000/api/ingest \
+    -H 'Content-Type: application/json' \
+    -d "{\"name\":\"requests\",\"type\":\"counter\",\"value\":$value}" >/dev/null
+done
+
 # A second counter, to make the filter visible.
 curl -s -X POST http://127.0.0.1:5000/api/ingest -H 'Content-Type: application/json' \
   -d '{"name":"requests_total","type":"counter","value":100,"tags":{"host":"web-1"}}'
@@ -44,9 +51,11 @@ curl -s -X POST http://127.0.0.1:5000/api/ingest -H 'Content-Type: application/j
   -d '{"name":"http_latency","type":"timer","value":128,"unit":"ms"}'
 ```
 
-**Expected visible result:** the terminal prints one JSON object per call,
-each with `"status": "created"`. If a call answers `409 METRIC_TYPE_MISMATCH`,
-the metric already exists with another type: start from a fresh database.
+**Expected visible result:** the direct terminal calls print one JSON object
+per call, each with `"status": "created"`. The loop quietly adds 30 more
+`requests` points, which gives the raw browser enough rows to paginate. If a
+call answers `409 METRIC_TYPE_MISMATCH`, the metric already exists with
+another type: start from a fresh database.
 
 ---
 
@@ -314,14 +323,15 @@ message that says the query could not be sent. No widget stays on
 **Expected visible result:**
 
 - The heading is **Metrics**.
-- A table with the columns `Metric`, `Type`, `Unit`, `Data points`, `Created`
-  and `Add widget`.
+- A table with the columns `Metric`, `Type`, `Unit`, `Data points`, `Created`,
+  `Raw data` and `Add widget`.
 - One row per metric of step 0: `requests` (`counter`), `requests_total`
   (`counter`), `deploy_status` (`string`), `health_check` (`bool`),
   `http_latency` (`timer`, unit `ms`).
 - The **Data points** column shows the number of points of each metric.
 - The **Add widget** button of a row opens the widget builder with that
   metric already selected.
+- The **Raw data** button opens the raw points of that metric.
 
 ---
 
@@ -363,6 +373,108 @@ appears: *"Delete this dashboard and all its widgets?"*. Confirm it.
 
 ---
 
+## Step 14 — Opening the raw data browser
+
+**Action:** open **Metrics**, find the `requests` row and press **Raw data**.
+
+**Expected visible result:**
+
+- The browser lands on `/metrics/requests/raw`.
+- The heading reads **requests raw data**.
+- The table has the columns `Timestamp`, `Value`, `Tags`, `Received at` and
+  `ID`.
+- The subtitle reports **33 points** in the selected range: the three direct
+  points of step 0 plus the 30 points added by its loop.
+- The newest measurement is in the first row by default.
+- The picker is visible on the right, with the quick ranges `5m`, `15m`,
+  `1h`, `6h`, `24h`, `7d` and `30d`, the custom start and end fields, the
+  page size and the refresh interval.
+
+---
+
+## Step 15 — Changing the time range
+
+**Action:** choose `5m` in **Quick range**. Then choose **Custom**, enter a
+start and an end that contain the `requests` points, and press **Apply
+range**.
+
+**Expected visible result:**
+
+- Changing the quick range reloads the table without a full-page navigation.
+- The relative range is resolved against the browser clock, so it shows the
+  points ingested during the manual session.
+- The custom range reloads the table with the chosen absolute bounds.
+- The start and end fields are enabled only for **Custom**.
+- If the chosen range contains no point, the page shows **There are no points
+  in this range**. It does **not** show an error block.
+
+---
+
+## Step 16 — Paginating the points
+
+**Action:** choose `25` in **Page size**. Press **Next**, then **Previous**.
+
+**Expected visible result:**
+
+- The first page holds 25 rows and the page indicator reads **Page 1 of 2**.
+- **Next** loads the remaining 8 rows and the indicator reads **Page 2 of 2**.
+- **Previous** returns to the first 25 rows.
+- Changing the page size returns to page 1 and reloads the table.
+- The total point count stays 33; pagination changes the visible rows, not
+  the selected range.
+
+---
+
+## Step 17 — Refreshing on demand
+
+**Action:** press **Refresh** in the page header.
+
+**Expected visible result:**
+
+- The table reloads without leaving the page.
+- The live indicator shows a newer **Last update** timestamp.
+- The row count and the selected range do not change.
+
+---
+
+## Step 18 — Watching the live long poll
+
+**Action:** leave the refresh interval at `2s`. In a terminal, ingest one
+more point:
+
+```bash
+curl -s -X POST http://127.0.0.1:5000/api/ingest \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"requests","type":"counter","value":42,"tags":{"host":"web-3"}}'
+```
+
+**Expected visible result:**
+
+- Within about two seconds, the new point appears in the table without a
+  manual reload.
+- The live indicator reports **1 new point** and a new **Last update** time.
+- The new row shows the value `42.0` and the tag `{"host":"web-3"}`.
+- The browser does not send overlapping long-poll requests; the network panel
+  shows one request waiting at a time.
+
+---
+
+## Step 19 — Downloading the CSV
+
+**Action:** press **Download CSV**.
+
+**Expected visible result:**
+
+- The browser downloads a file named `requests-raw.csv`.
+- The first row is
+  `id,ts_utc,received_at_utc,value,tags`.
+- The file contains every point of the selected range, not only the 25 rows
+  of the visible page: with the default range it contains the 34 points
+  prepared above.
+- The timestamps are ISO-8601 UTC values and the tags are compact JSON.
+
+---
+
 ## Result
 
 Fill this in when the checklist is done:
@@ -383,3 +495,9 @@ Fill this in when the checklist is done:
 | 11 — metrics overview | ☐ pass ☐ fail | |
 | 12 — delete a widget and a dashboard | ☐ pass ☐ fail | |
 | 13 — unknown page | ☐ pass ☐ fail | |
+| 14 — open the raw data browser | ☐ pass ☐ fail | |
+| 15 — change the time range | ☐ pass ☐ fail | |
+| 16 — paginate the points | ☐ pass ☐ fail | |
+| 17 — refresh on demand | ☐ pass ☐ fail | |
+| 18 — watch the live long poll | ☐ pass ☐ fail | |
+| 19 — download the CSV | ☐ pass ☐ fail | |

@@ -20,6 +20,7 @@ SPA, no client-side framework and no background worker.
 - [Ingestion API](#ingestion-api)
 - [Error contract](#error-contract)
 - [Query API](#query-api)
+- [Raw data API](#raw-data-api)
 - [Web UI](#web-ui)
 - [Migrations](#migrations)
 - [Testing](#testing)
@@ -37,6 +38,8 @@ SPA, no client-side framework and no background worker.
 - A **query API** that aggregates the points of a metric over a time range
   into a bucketed time series: `GET /api/query` (and the same thing with
   `POST /api/query` and a JSON body).
+- A **raw data browser** that exposes the exact stored points, their tags and
+  their ingestion times with pagination, CSV export and live long-poll updates.
 - A **web UI** with dashboards, a widget builder, drag & drop reordering and
   four chart renderings (line, bar, table and stat).
 - **One error contract** for the API and for the UI: every failure carries a
@@ -326,6 +329,7 @@ server log.
 | `AMBIGUOUS_TIMESTAMP` | 400 | The numeric `timestamp` is below 1e11: it looks like epoch seconds, not milliseconds. |
 | `BAD_REQUEST` | 400 | Werkzeug rejected the raw request before the application could parse it. |
 | `DASHBOARD_NOT_FOUND` | 404 | No dashboard carries the requested id. |
+| `EXPORT_TOO_LARGE` | 400 | The selected range contains more than 10,000 points and cannot be exported as CSV. |
 | `HTTP_ERROR` | the HTTP status of the failure | Any other Werkzeug HTTP error (for example 413) that the application does not describe itself. |
 | `INTERNAL_ERROR` | 500 | An unexpected crash. The traceback goes to the server log, never to the client. |
 | `INVALID_AGGREGATION` | 400 | The `agg` parameter is not one of `sum`, `avg`, `min`, `max`, `count`, `last`. |
@@ -342,9 +346,12 @@ server log.
 | `INVALID_METRIC_NAME` | 400 | The `name` is missing, not a string, empty, too long, or does not match the name pattern. |
 | `INVALID_METRIC_TYPE` | 400 | The `type` is not a string, or it is not one of the five known types. |
 | `INVALID_NAME` | 400 | The name of a dashboard or of a widget is missing, blank, not a string or too long. |
-| `INVALID_ORDER` | 400 | The body of the reorder request does not carry `widget_ids`, or the ids do not match the widgets of the dashboard exactly. |
+| `INVALID_ORDER` | 400 | The raw API received an `order` other than `asc` or `desc`, or the body of the widget reorder request does not carry the exact widget ids. |
+| `INVALID_PAGE` | 400 | A raw page offset is negative, or a web page number is not greater than zero. |
+| `INVALID_PAGE_SIZE` | 400 | A raw page size is not an integer between 1 and 500. |
 | `INVALID_TAGS` | 400 | The `tags` are not an object, a tag name is empty or too long, or a tag value is not a JSON scalar. |
-| `INVALID_TIME_RANGE` | 400 | The `from` bound is not earlier than the `to` bound (query API), or the `time_range` of a widget is not one of `1h`, `6h`, `24h`, `7d`, `30d` (web UI). |
+| `INVALID_TIMEOUT` | 400 | The raw long-poll timeout is not a number of seconds between 0 and 10. |
+| `INVALID_TIME_RANGE` | 400 | The `from` bound is not earlier than the `to` bound, or a widget/raw time range is not one of `5m`, `15m`, `1h`, `6h`, `24h`, `7d`, `30d`. |
 | `INVALID_TIMESTAMP` | 400 | The `timestamp` is a boolean, a fractional number, a negative number, or a string that is not an ISO-8601 date. |
 | `INVALID_UNIT` | 400 | The `unit` is not a string or is longer than 32 characters. |
 | `INVALID_VALUE` | 400 | The `value` is missing, or it does not match the type of the metric. |
@@ -503,6 +510,94 @@ curl http://127.0.0.1:5000/api/metrics/requests/tags
 The discovery reads at most the **1000 most recent** data points and samples
 at most **10** values per key, so it stays cheap on a large metric.
 
+## Raw data API
+
+The raw API exposes the measurements exactly as they were stored. It never
+changes the ingestion or query contracts, and both endpoints live under
+`/api` so every failure uses the shared six-key JSON envelope.
+
+### `GET /api/raw`
+
+Returns one page of raw points. The page is selected in SQL with `LIMIT` and
+`OFFSET`; the server does not read the whole window into memory.
+
+| Parameter | Required | Default | Meaning |
+| --- | --- | --- | --- |
+| `metric` | yes | — | The name of the metric to read. |
+| `from` | no | `to - 24h` | The start of the range, in epoch milliseconds or as an ISO-8601 string. |
+| `to` | no | now | The end of the range, in epoch milliseconds or as an ISO-8601 string. |
+| `limit` | no | `50` | The number of points to return, from 1 to 500. |
+| `offset` | no | `0` | The number of points to skip. |
+| `order` | no | `desc` | `desc` returns the newest measurement first; `asc` returns the oldest first. |
+
+```bash
+curl "http://127.0.0.1:5000/api/raw?metric=temperature&limit=1&order=desc"
+```
+
+```json
+{
+  "metric": {"id": 1, "name": "temperature", "type": "gauge", "unit": "C"},
+  "from_ms": 1700000000000,
+  "to_ms": 1700086400000,
+  "order": "desc",
+  "total": 68,
+  "limit": 1,
+  "offset": 0,
+  "latest_id": 68,
+  "points": [
+    {
+      "id": 68,
+      "ts_ms": 1700086399000,
+      "received_at_ms": 1700086400000,
+      "value": 24.5,
+      "tags": {"sensor": "ambient"}
+    }
+  ]
+}
+```
+
+- `ts_ms` is the measurement time; `received_at_ms` is the ingestion time.
+  They can be minutes or hours apart.
+- The JSON type of `value` follows the metric type: a number for `counter`,
+  `gauge` and `timer`, the stored text for `string`, and a real boolean for
+  `bool`.
+- `tags` is always an object. A malformed stored document degrades to `{}`.
+- `total` counts every point in the range, while `points` holds only the
+  requested page.
+
+### `GET /api/raw/wait`
+
+Holds the request open until a point newer than `since_id` arrives inside the
+range, or until the timeout expires. The auto-increment point id is the
+watermark because it is monotonic, so a point is neither missed nor repeated.
+
+| Parameter | Required | Default | Meaning |
+| --- | --- | --- | --- |
+| `metric` | yes | — | The name of the metric to watch. |
+| `since_id` | no | `0` | The last point id already held by the caller. |
+| `from` | no | `to - 24h` | The start of the range. |
+| `to` | no | now | The end of the range. |
+| `timeout` | no | `2` | The number of seconds to wait, from 0 to 10. |
+
+```json
+{
+  "metric": {"id": 1, "name": "temperature", "type": "gauge", "unit": "C"},
+  "latest_id": 69,
+  "waited_ms": 418,
+  "points": [
+    {
+      "id": 69,
+      "ts_ms": 1700086401000,
+      "received_at_ms": 1700086401100,
+      "value": 24.7,
+      "tags": {"sensor": "ambient"}
+    }
+  ]
+}
+```
+
+An empty `points` list is a successful timeout, not an error.
+
 ## Web UI
 
 The UI is server-rendered. Open <http://127.0.0.1:5000/> after starting the
@@ -514,6 +609,7 @@ app.
 | Dashboard | `/dashboards/<id>` | Shows the widgets of a dashboard, in their order. |
 | Widget builder | `/dashboards/<id>/widgets/new` and `/widgets/<id>/edit` | Creates or edits a widget. |
 | Metric overview | `/metrics` | Lists the metrics with their type, unit and data point count. |
+| Raw data browser | `/metrics/<metric_name>/raw` | Lists the exact stored points of a metric with a time picker, pagination, live updates and CSV export. |
 
 ### Creating a dashboard
 
@@ -531,7 +627,7 @@ On a dashboard, press **Add widget**. The builder asks for:
 | **Chart type** | `line`, `bar`, `table` or `stat`. |
 | **Aggregation** | The aggregation to apply. |
 | **Bucket** | `auto`, or a positive number of seconds. |
-| **Time range** | `1h`, `6h`, `24h`, `7d` or `30d`. The range is resolved against the browser clock. |
+| **Time range** | `5m`, `15m`, `1h`, `6h`, `24h`, `7d` or `30d`. The range is resolved against the browser clock. |
 | **Group by tag** | The tag key to group by, or no grouping. |
 | **Filters** | The filters, one row per filter. |
 
@@ -574,6 +670,31 @@ The **Group by tag** list and the tag fields of the filters are built from
 `GET /api/metrics/<metric_name>/tags`, which discovers the tag keys from the
 most recent data points of the metric. A metric that has never received a
 point with a tag offers no tag key.
+
+### The raw data browser
+
+Open `/metrics/<metric_name>/raw` from the **Raw data** link in the metrics
+overview or the **Raw** link in a dashboard widget. The page shows the exact
+measurement time, typed value, tags, ingestion time and point id.
+
+The picker offers:
+
+- quick ranges `5m`, `15m`, `1h`, `6h`, `24h`, `7d` and `30d`, resolved
+  against the browser clock;
+- a custom absolute range with a start and an end;
+- a selectable page size and a refresh interval (`off`, `2s`, `5s`, `10s`,
+  `30s` or `1m`).
+
+The default refresh interval is `2s`. The page then holds
+`GET /api/raw/wait` open and adds new points without a manual reload. The
+live indicator shows the last update time and the number of new points that
+arrived. **Refresh** reloads the current page on demand.
+
+**Download CSV** exports every point in the selected range, not only the
+visible page. The download is served by
+`GET /metrics/<metric_name>/raw.csv` as `text/csv` with an attachment
+filename. The export is limited to 10,000 points; a wider range answers
+`400 EXPORT_TOO_LARGE` with the standard error envelope.
 
 ## Migrations
 
