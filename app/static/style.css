@@ -207,6 +207,20 @@ code {
   font-variant-numeric: tabular-nums;
 }
 
+.raw-table-wrap {
+  overflow-x: auto;
+}
+
+.raw-table {
+  min-width: 52rem;
+}
+
+.raw-table .raw-tags {
+  max-width: 24rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 /* ----------------------------------------------------------------- forms */
 
 .form {
@@ -250,6 +264,7 @@ code {
 
 input[type="text"],
 input[type="number"],
+input[type="datetime-local"],
 select,
 textarea {
   font: inherit;

@@ -22,7 +22,18 @@ from ..query.routes import parse_agg, parse_bucket, parse_group_by
 CHART_TYPES: tuple[str, ...] = ("line", "bar", "table", "stat")
 
 #: The time ranges a widget can cover.
-TIME_RANGES: tuple[str, ...] = ("1h", "6h", "24h", "7d", "30d")
+TIME_RANGES: tuple[str, ...] = ("5m", "15m", "1h", "6h", "24h", "7d", "30d")
+
+#: The duration of every relative range, in milliseconds.
+RANGE_MS: dict[str, int] = {
+    "5m": 5 * 60 * 1000,
+    "15m": 15 * 60 * 1000,
+    "1h": 60 * 60 * 1000,
+    "6h": 6 * 60 * 60 * 1000,
+    "24h": 24 * 60 * 60 * 1000,
+    "7d": 7 * 24 * 60 * 60 * 1000,
+    "30d": 30 * 24 * 60 * 60 * 1000,
+}
 
 #: Maximum length of a dashboard name, matching the column definition.
 MAX_NAME_LENGTH = 255

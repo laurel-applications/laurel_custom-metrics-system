@@ -14,16 +14,36 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
-from flask import Blueprint, redirect, render_template, request, url_for
+from flask import Blueprint, Response, jsonify, redirect, render_template, request, url_for
 from sqlalchemy import func, select
 
 from ..errors import ApiError
 from ..extensions import db
 from ..models import Dashboard, DataPoint, Metric, Widget
+from ..query import routes as query_routes
+from ..raw import service as raw_service
 from . import validation
 
 #: The blueprint owns every HTML route of the application.
 bp = Blueprint("web", __name__)
+
+#: The default range shown by the raw data page.
+RAW_DEFAULT_RANGE = "24h"
+
+#: The default number of rows shown by the raw data page.
+RAW_DEFAULT_SIZE = 50
+
+#: The largest number of rows the raw data page can request at once.
+RAW_MAX_SIZE = 500
+
+#: The page sizes offered by the raw data page.
+RAW_PAGE_SIZES: tuple[int, ...] = (25, 50, 100, 250, 500)
+
+#: The refresh intervals offered by the raw data page.
+RAW_REFRESH_INTERVALS: tuple[str, ...] = ("off", "2s", "5s", "10s", "30s", "1m")
+
+#: The largest number of points a CSV export may contain.
+RAW_EXPORT_LIMIT = 10_000
 
 
 def _now_ms() -> int:
@@ -201,6 +221,142 @@ def _get_metric(name: str | None) -> Metric:
             http_status=404,
         )
     return metric
+
+
+def _parse_raw_page(raw: str | None) -> int:
+    """Return the one-based page selected by the raw data page."""
+    value = 1 if raw is None else raw
+    try:
+        page = int(value)
+    except (TypeError, ValueError):
+        page = 0
+
+    if page < 1:
+        raise ApiError(
+            "INVALID_PAGE",
+            "The page number must be greater than zero.",
+            field="page",
+            expected="a positive integer page number",
+            received=value,
+            hint="Use page 1 for the first page, or choose a later page number.",
+        )
+    return page
+
+
+def _parse_raw_size(raw: str | None) -> int:
+    """Return the page size selected by the raw data page."""
+    value = RAW_DEFAULT_SIZE if raw is None else raw
+    try:
+        size = int(value)
+    except (TypeError, ValueError):
+        size = 0
+
+    if size < 1 or size > RAW_MAX_SIZE:
+        raise ApiError(
+            "INVALID_PAGE_SIZE",
+            "The page size must be between 1 and 500 points.",
+            field="size",
+            expected=f"an integer between 1 and {RAW_MAX_SIZE}",
+            received=value,
+            hint="Choose a page size between 1 and 500, for example 50.",
+        )
+    return size
+
+
+def _raw_range() -> tuple[int, int, str]:
+    """Return the selected raw data range and the name of its picker mode.
+
+    Absolute bounds win over a relative range because they carry the exact
+    window the browser is currently showing.  The relative fallback is
+    resolved by the server only for the first server-rendered page.
+    """
+    raw_from = request.args.get("from")
+    raw_to = request.args.get("to")
+
+    if raw_from is not None or raw_to is not None:
+        bounds: dict[str, Any] = {}
+        if raw_from is not None:
+            bounds["from"] = raw_from
+        if raw_to is not None:
+            bounds["to"] = raw_to
+        from_ms, to_ms = query_routes._time_bounds(bounds, _now_ms())
+        return from_ms, to_ms, "custom"
+
+    selected_range = validation.validate_time_range(
+        request.args.get("range", RAW_DEFAULT_RANGE)
+    )
+    to_ms = _now_ms()
+    from_ms = to_ms - validation.RANGE_MS[selected_range]
+    return from_ms, to_ms, selected_range
+
+
+def _datetime_local(timestamp_ms: int) -> str:
+    """Return an epoch millisecond timestamp as a UTC datetime-local value."""
+    moment = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
+    return moment.strftime("%Y-%m-%dT%H:%M")
+
+
+def _render_raw_page(
+    metric: Metric,
+    *,
+    from_ms: int,
+    to_ms: int,
+    selected_range: str,
+    page: int,
+    size: int,
+    points: list[raw_service.RawPoint],
+    total: int,
+    error: Mapping[str, Any] | None = None,
+    status: int = 200,
+) -> Any:
+    """Render the raw data page with its picker and the selected point page."""
+    page_count = max(1, (total + size - 1) // size)
+    csv_url = url_for(
+        "web.raw_csv",
+        metric_name=metric.name,
+        range=selected_range,
+        **{"from": from_ms, "to": to_ms},
+    )
+    config = {
+        "metric": metric.name,
+        "metric_id": metric.id,
+        "metric_type": metric.type,
+        "unit": metric.unit,
+        "range": selected_range,
+        "from_ms": from_ms,
+        "to_ms": to_ms,
+        "page": page,
+        "size": size,
+        "total": total,
+        "order": "desc",
+        "latest_id": raw_service.latest_id(metric.id),
+        "refresh": "2s",
+    }
+
+    return (
+        render_template(
+            "raw_data.html",
+            metric=metric,
+            metrics=_metric_rows(),
+            points=points,
+            total=total,
+            page=page,
+            page_count=page_count,
+            size=size,
+            from_ms=from_ms,
+            to_ms=to_ms,
+            start_value=_datetime_local(from_ms),
+            end_value=_datetime_local(to_ms),
+            selected_range=selected_range,
+            time_ranges=validation.TIME_RANGES,
+            page_sizes=RAW_PAGE_SIZES,
+            refresh_intervals=RAW_REFRESH_INTERVALS,
+            csv_url=csv_url,
+            config=config,
+            error=error,
+        ),
+        status,
+    )
 
 
 def _next_position(dashboard_id: int) -> int:
@@ -626,3 +782,87 @@ def metrics_overview() -> Any:
         dashboards=dashboards,
         error=None,
     )
+
+
+@bp.get("/metrics/<metric_name>/raw")
+def raw_data(metric_name: str) -> Any:
+    """Show the raw points of a metric with the dynamic range picker."""
+    metric = _get_metric(metric_name)
+
+    try:
+        page = _parse_raw_page(request.args.get("page"))
+        size = _parse_raw_size(request.args.get("size"))
+        from_ms, to_ms, selected_range = _raw_range()
+    except ApiError as error:
+        now_ms = _now_ms()
+        return _render_raw_page(
+            metric,
+            from_ms=now_ms - validation.RANGE_MS[RAW_DEFAULT_RANGE],
+            to_ms=now_ms,
+            selected_range=RAW_DEFAULT_RANGE,
+            page=1,
+            size=RAW_DEFAULT_SIZE,
+            points=[],
+            total=0,
+            error=_error_payload(error),
+            status=error.http_status,
+        )
+
+    points, total = raw_service.list_points(
+        metric,
+        from_ms,
+        to_ms,
+        size,
+        (page - 1) * size,
+        "desc",
+    )
+    return _render_raw_page(
+        metric,
+        from_ms=from_ms,
+        to_ms=to_ms,
+        selected_range=selected_range,
+        page=page,
+        size=size,
+        points=points,
+        total=total,
+    )
+
+
+@bp.get("/metrics/<metric_name>/raw.csv")
+def raw_csv(metric_name: str) -> None | tuple[Any, int]:
+    """Download every raw point of a metric in the selected range."""
+    try:
+        metric = _get_metric(metric_name)
+        from_ms, to_ms, _ = _raw_range()
+    except ApiError as error:
+        return jsonify(error.to_envelope()), error.http_status
+
+    total = raw_service.count_points(metric.id, from_ms, to_ms)
+    if total > RAW_EXPORT_LIMIT:
+        error = ApiError(
+            "EXPORT_TOO_LARGE",
+            "The selected range contains too many points for a CSV export.",
+            field="range",
+            expected=f"at most {RAW_EXPORT_LIMIT} points",
+            received=total,
+            hint="Narrow the time range until it contains at most 10,000 points.",
+        )
+        return jsonify(error.to_envelope()), error.http_status
+
+    points, _ = raw_service.list_points(
+        metric,
+        from_ms,
+        to_ms,
+        RAW_EXPORT_LIMIT,
+        0,
+        "desc",
+    )
+    response = Response(raw_service.to_csv(points), mimetype="text/csv")
+    safe_name = "".join(
+        character if character.isalnum() or character in "._-" else "_"
+        for character in metric.name
+    )
+    response.headers["Content-Disposition"] = (
+        f'attachment; filename="{safe_name}-raw.csv"'
+    )
+    return response

@@ -103,7 +103,7 @@ Nothing else may be modified.
   `GET /api/raw/wait`; the blueprint registered in `app/__init__.py`.
   *Route: delegated writer.*
   *Checks: `.venv/bin/python -m pytest -q tests/test_raw.py`.*
-- [ ] **T2 — Page, picker, pagination and live updates.** The page route,
+- [x] **T2 — Page, picker, pagination and live updates.** The page route,
   the CSV route, `raw_data.html`, `raw.js`, the styles, the links from the
   widgets and the metrics overview, and the new ranges.
   *Route: delegated writer.*
@@ -154,6 +154,6 @@ reviewable commits instead.
 
 | Task | Outcome | Evidence |
 | --- | --- | --- |
-| T1 | Implemented | `.venv/bin/python -m pytest -q tests/test_raw.py` → `15 passed in 0.71s`; full suite → `134 passed in 13.40s`. Commit id is recorded after the commit. |
-| T2 | Pending | — |
+| T1 | Implemented | Commit `648f4f0`. `.venv/bin/python -m pytest -q tests/test_raw.py` → `15 passed in 0.71s`; full suite → `134 passed in 13.40s`. |
+| T2 | Implemented | `.venv/bin/python -m pytest -q tests/test_raw.py tests/test_frontend.py` → `33 passed in 1.65s`; full suite → `148 passed in 12.03s`. Commit id is recorded after the commit. |
 | T3 | Pending | — |

@@ -28,6 +28,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 #: The front end script.
 APP_JS = REPO_ROOT / "app" / "static" / "app.js"
 
+#: The raw data browser script.
+RAW_JS = REPO_ROOT / "app" / "static" / "raw.js"
+
 #: The JavaScript regression test of the filter values.
 JS_TEST = REPO_ROOT / "tests" / "js" / "filter_value_test.js"
 
@@ -88,3 +91,52 @@ def test_a_failed_widget_query_never_leaves_a_blank_chart() -> None:
     # canvas: the placeholder is replaced by the error block.
     assert "if (!result.data) {" in source
     assert "renderError(" in source
+
+
+def test_the_raw_data_script_is_shipped() -> None:
+    """The raw browser script exists and is not empty."""
+    assert RAW_JS.is_file()
+    assert RAW_JS.stat().st_size > 0
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_raw_data_script_passes_the_javascript_syntax_check() -> None:
+    """``node --check`` accepts the shipped raw browser script."""
+    result = subprocess.run(
+        [NODE, "--check", str(RAW_JS)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_the_raw_data_script_uses_safe_recurring_updates() -> None:
+    """The live browser never overlaps requests and never injects HTML."""
+    source = RAW_JS.read_text(encoding="utf-8")
+
+    assert "setTimeout(" in source
+    assert "setInterval(" not in source
+    assert '"/api/raw/wait?' in source
+    assert "Accept: \"application/json\"" in source
+    assert "result.data && result.data.error ? result.data.error : null" in source
+    assert "document.createElement" in source
+    assert ".textContent" in source
+    assert ".innerHTML" not in source
+
+
+def test_the_raw_data_script_uses_the_browser_clock() -> None:
+    """Relative ranges are resolved against the browser, not the server."""
+    source = RAW_JS.read_text(encoding="utf-8")
+
+    assert "var now = Date.now();" in source
+    assert '"5m": 5 * 60 * 1000' in source
+    assert '"15m": 15 * 60 * 1000' in source
+
+
+def test_the_widget_and_raw_ranges_share_the_new_short_ranges() -> None:
+    """The widget and the raw picker agree on the five and fifteen minute ranges."""
+    source = APP_JS.read_text(encoding="utf-8")
+
+    assert '"5m": 5 * 60 * 1000' in source
+    assert '"15m": 15 * 60 * 1000' in source

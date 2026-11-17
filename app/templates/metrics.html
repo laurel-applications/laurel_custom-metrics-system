@@ -23,6 +23,7 @@
             <th>Unit</th>
             <th class="num">Data points</th>
             <th>Created</th>
+            <th>Raw data</th>
             <th>Add widget</th>
           </tr>
         </thead>
@@ -34,6 +35,13 @@
               <td>{{ metric.unit if metric.unit else "-" }}</td>
               <td class="num">{{ metric.data_point_count }}</td>
               <td>{{ metric.created_at_ms | ts }}</td>
+              <td>
+                <a
+                  class="button button-small button-ghost"
+                  href="{{ url_for('web.raw_data', metric_name=metric.name) }}"
+                  >Raw data</a
+                >
+              </td>
               <td>
                 {% if dashboards %}
                   <a

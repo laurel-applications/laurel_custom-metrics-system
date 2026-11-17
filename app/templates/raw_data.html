@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% from "_error_block.html" import error_block %}
+
+{% block title %}{{ metric.name }} raw data &middot; Laurel Metrics{% endblock %}
+
+{% block content %}
+  <section
+    class="panel"
+    data-role="raw-browser"
+    data-config='{{ config | tojson }}'
+  >
+    <div class="panel-head">
+      <div>
+        <h1 class="page-title">{{ metric.name }} raw data</h1>
+        <p class="page-subtitle">
+          <span data-role="total-count">{{ total }}</span>
+          point{{ "" if total == 1 else "s" }} in the selected range
+        </p>
+      </div>
+      <div class="panel-actions">
+        <a
+          class="button button-ghost"
+          data-role="csv-download"
+          href="{{ csv_url }}"
+          >Download CSV</a
+        >
+        <button type="button" class="button" data-role="refresh">
+          Refresh
+        </button>
+      </div>
+    </div>
+
+    {{ error_block(error, "The raw data page could not be loaded") }}
+    <div data-role="raw-error"></div>
+
+    <div class="split">
+      <div class="split-main">
+        <p class="grid-status" data-role="live-status" aria-live="polite"></p>
+
+        <div class="raw-table-wrap">
+          <table class="table raw-table">
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Value</th>
+                <th>Tags</th>
+                <th>Received at</th>
+                <th class="num">ID</th>
+              </tr>
+            </thead>
+            <tbody data-role="rows">
+              {% for point in points %}
+                <tr>
+                  <td>{{ point.ts_ms | ts }}</td>
+                  <td>
+                    {{ "true" if point.value is true else "false" if point.value is false else point.value }}
+                  </td>
+                  <td class="raw-tags"><code>{{ point.tags | tojson }}</code></td>
+                  <td>{{ point.received_at_ms | ts }}</td>
+                  <td class="num">{{ point.id }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <div
+          class="empty-state"
+          data-role="empty"
+          {% if points %}hidden{% endif %}
+        >
+          <h2>There are no points in this range</h2>
+          <p>
+            Choose a wider range or ingest another measurement for
+            <strong>{{ metric.name }}</strong>.
+          </p>
+        </div>
+
+        <div class="actions">
+          <button
+            type="button"
+            class="button button-ghost button-small"
+            data-role="previous-page"
+            {% if page <= 1 %}disabled{% endif %}
+          >
+            Previous
+          </button>
+          <span class="muted" data-role="page-info"
+            >Page {{ page }} of {{ page_count }}</span
+          >
+          <button
+            type="button"
+            class="button button-ghost button-small"
+            data-role="next-page"
+            {% if page >= page_count %}disabled{% endif %}
+          >
+            Next
+          </button>
+        </div>
+      </div>
+
+      <aside class="split-side">
+        <form class="form" data-role="raw-picker">
+          <h2 class="panel-title">Time range</h2>
+
+          <div class="form-grid">
+            <label class="field">
+              <span class="field-label">Metric</span>
+              <select data-role="metric-select">
+                {% for option in metrics %}
+                  <option
+                    value="{{ option.name }}"
+                    {% if option.name == metric.name %}selected{% endif %}
+                  >
+                    {{ option.name }}
+                  </option>
+                {% endfor %}
+              </select>
+              <span class="field-hint">The metric whose points are shown.</span>
+            </label>
+
+            <label class="field">
+              <span class="field-label">Quick range</span>
+              <select data-role="range-select">
+                {% for option in time_ranges %}
+                  <option
+                    value="{{ option }}"
+                    {% if option == selected_range %}selected{% endif %}
+                  >
+                    {{ option }}
+                  </option>
+                {% endfor %}
+                <option
+                  value="custom"
+                  {% if selected_range == "custom" %}selected{% endif %}
+                >
+                  Custom
+                </option>
+              </select>
+              <span class="field-hint">Resolved against this browser's clock.</span>
+            </label>
+
+            <label class="field">
+              <span class="field-label">Start</span>
+              <input
+                type="datetime-local"
+                data-role="range-start"
+                value="{{ start_value }}"
+                {% if selected_range != "custom" %}disabled{% endif %}
+              />
+            </label>
+
+            <label class="field">
+              <span class="field-label">End</span>
+              <input
+                type="datetime-local"
+                data-role="range-end"
+                value="{{ end_value }}"
+                {% if selected_range != "custom" %}disabled{% endif %}
+              />
+            </label>
+
+            <label class="field">
+              <span class="field-label">Page size</span>
+              <select data-role="page-size">
+                {% for option in page_sizes %}
+                  <option
+                    value="{{ option }}"
+                    {% if option == size %}selected{% endif %}
+                  >
+                    {{ option }}
+                  </option>
+                {% endfor %}
+              </select>
+            </label>
+
+            <label class="field">
+              <span class="field-label">Refresh interval</span>
+              <select data-role="refresh-interval">
+                {% for option in refresh_intervals %}
+                  <option
+                    value="{{ option }}"
+                    {% if option == config.refresh %}selected{% endif %}
+                  >
+                    {{ option }}
+                  </option>
+                {% endfor %}
+              </select>
+              <span class="field-hint">The 2s interval uses a live long poll.</span>
+            </label>
+          </div>
+
+          <div class="actions">
+            <button type="submit" class="button">Apply range</button>
+          </div>
+        </form>
+      </aside>
+    </div>
+  </section>
+{% endblock %}

@@ -54,6 +54,11 @@
               </div>
               <div class="widget-actions">
                 <a
+                  class="button button-small button-ghost"
+                  href="{{ url_for('web.raw_data', metric_name=widget.metric_name) }}"
+                  >Raw</a
+                >
+                <a
                   class="button button-small"
                   href="{{ url_for('web.widget_edit_form', widget_id=widget.id) }}"
                   >Edit</a

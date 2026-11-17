@@ -12,6 +12,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import re
 import threading
 import time
 from typing import Any, Iterable, Mapping
@@ -21,7 +22,7 @@ from flask.testing import FlaskClient
 from sqlalchemy import select
 
 from app.extensions import db
-from app.models import DataPoint, Metric
+from app.models import Dashboard, DataPoint, Metric, Widget
 from app.raw import service
 
 #: The exact key set every error envelope must carry.
@@ -526,3 +527,268 @@ def test_raw_api_rejects_a_timeout_above_ten_seconds(
     )
     assert error["field"] == "timeout"
     assert error["hint"]
+
+
+# ------------------------------------------------------------------ web page
+
+
+def test_raw_page_renders_the_picker_and_first_page(
+    app: Flask, client: FlaskClient
+) -> None:
+    """The page works before JavaScript and shows the selected point page."""
+    insert_points(
+        app,
+        "temperature",
+        "gauge",
+        [
+            {"ts": FROM_MS + 1000, "value": 20.0},
+            {"ts": FROM_MS + 2000, "value": 21.0},
+            {"ts": FROM_MS + 3000, "value": 22.0},
+        ],
+        unit="C",
+    )
+
+    response = client.get(
+        "/metrics/temperature/raw",
+        query_string={"from": FROM_MS, "to": TO_MS, "page": 1, "size": 2},
+    )
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "temperature raw data" in html
+    assert "Timestamp" in html
+    assert "Received at" in html
+    assert "2023-11-14 22:13:23 UTC" in html
+    assert "22.0" in html
+    assert 'value="5m"' in html
+    assert 'value="15m"' in html
+    assert 'value="1h"' in html
+    assert 'value="6h"' in html
+    assert 'value="24h"' in html
+    assert 'value="7d"' in html
+    assert 'value="30d"' in html
+    assert 'type="datetime-local"' in html
+    assert re.search(r'value="2s"\s+selected', html)
+    assert "data-role=\"page-size\"" in html
+    assert "data-role=\"refresh-interval\"" in html
+    assert "raw.js" in html
+    assert "Page 1 of 2" in html
+
+
+def test_raw_page_renders_boolean_values_in_lowercase(
+    app: Flask, client: FlaskClient
+) -> None:
+    """The value column shows true and false, not Python's True and False."""
+    insert_points(
+        app,
+        "healthy",
+        "bool",
+        [{"ts": FROM_MS + 1000, "value": True}],
+    )
+
+    response = client.get(
+        "/metrics/healthy/raw",
+        query_string={"from": FROM_MS, "to": TO_MS},
+    )
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert re.search(r">\s*true\s*<", html)
+    assert not re.search(r">\s*True\s*<", html)
+
+
+def test_raw_page_of_an_unknown_metric_shows_the_error(
+    client: FlaskClient,
+) -> None:
+    """An unknown metric answers 404 with a visible code, message and hint."""
+    response = client.get("/metrics/ghost/raw")
+
+    assert response.status_code == 404
+    html = response.get_data(as_text=True)
+    assert "METRIC_NOT_FOUND" in html
+    assert "There is no metric named" in html
+    assert "List the known metrics" in html
+
+
+def test_raw_page_rejects_an_invalid_picker_value(
+    app: Flask, client: FlaskClient
+) -> None:
+    """Invalid ranges and pagination values are shown inside the page."""
+    insert_points(
+        app,
+        "temperature",
+        "gauge",
+        [{"ts": FROM_MS + 1000, "value": 20.0}],
+    )
+
+    invalid_range = client.get(
+        "/metrics/temperature/raw", query_string={"range": "3m"}
+    )
+    assert invalid_range.status_code == 400
+    range_html = invalid_range.get_data(as_text=True)
+    assert "INVALID_TIME_RANGE" in range_html
+    assert "not a known time range" in range_html
+    assert "Pick one of" in range_html
+
+    invalid_page = client.get(
+        "/metrics/temperature/raw", query_string={"page": 0}
+    )
+    assert invalid_page.status_code == 400
+    page_html = invalid_page.get_data(as_text=True)
+    assert "INVALID_PAGE" in page_html
+    assert "greater than zero" in page_html
+    assert "Use page 1" in page_html
+
+    invalid_size = client.get(
+        "/metrics/temperature/raw", query_string={"size": 501}
+    )
+    assert invalid_size.status_code == 400
+    size_html = invalid_size.get_data(as_text=True)
+    assert "INVALID_PAGE_SIZE" in size_html
+    assert "between 1 and 500" in size_html
+    assert "Choose a page size" in size_html
+
+
+def test_empty_raw_range_renders_an_empty_state_not_an_error(
+    app: Flask, client: FlaskClient
+) -> None:
+    """An empty window is a valid result, not a failure."""
+    insert_points(
+        app,
+        "temperature",
+        "gauge",
+        [{"ts": FROM_MS + 1000, "value": 20.0}],
+    )
+
+    response = client.get(
+        "/metrics/temperature/raw",
+        query_string={"from": FROM_MS - 2000, "to": FROM_MS - 1000},
+    )
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "There are no points in this range" in html
+    assert 'class="error-block"' not in html
+
+
+# ----------------------------------------------------------------------- CSV
+
+
+def test_raw_csv_contains_every_point_in_the_range(
+    app: Flask, client: FlaskClient
+) -> None:
+    """The download ignores pagination and returns the complete range."""
+    insert_points(
+        app,
+        "temperature",
+        "gauge",
+        [
+            {"ts": FROM_MS + 1000, "value": 20.0},
+            {"ts": FROM_MS + 2000, "value": 21.0},
+            {"ts": FROM_MS + 3000, "value": 22.0},
+        ],
+    )
+
+    response = client.get(
+        "/metrics/temperature/raw.csv",
+        query_string={"from": FROM_MS, "to": TO_MS},
+    )
+
+    assert response.status_code == 200
+    assert response.content_type.startswith("text/csv")
+    assert "attachment" in response.headers["Content-Disposition"]
+    assert "temperature-raw.csv" in response.headers["Content-Disposition"]
+    rows = list(csv.reader(io.StringIO(response.get_data(as_text=True))))
+    assert rows[0] == ["id", "ts_utc", "received_at_utc", "value", "tags"]
+    assert len(rows) == 4
+
+
+def test_raw_csv_refuses_a_range_with_more_than_ten_thousand_points(
+    app: Flask, client: FlaskClient
+) -> None:
+    """An oversized export answers the shared JSON envelope."""
+    insert_points(
+        app,
+        "temperature",
+        "gauge",
+        [
+            {"ts": FROM_MS + index, "value": float(index)}
+            for index in range(10_001)
+        ],
+    )
+
+    response = client.get(
+        "/metrics/temperature/raw.csv",
+        query_string={"from": FROM_MS, "to": TO_MS},
+    )
+
+    assert response.status_code == 400
+    error = assert_envelope(response, 400, "EXPORT_TOO_LARGE")
+    assert error["field"] == "range"
+    assert error["received"] == 10_001
+    assert error["hint"]
+
+
+# --------------------------------------------------------------------- links
+
+
+def test_metrics_overview_links_to_the_raw_page(
+    app: Flask, client: FlaskClient
+) -> None:
+    """Every metric row opens its own raw data page."""
+    insert_points(
+        app,
+        "temperature",
+        "gauge",
+        [{"ts": FROM_MS + 1000, "value": 20.0}],
+    )
+
+    response = client.get("/metrics")
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert '/metrics/temperature/raw' in html
+    assert "Raw data" in html
+
+
+def test_dashboard_widget_links_to_the_raw_page(
+    app: Flask, client: FlaskClient
+) -> None:
+    """Every widget opens the raw page of the metric it visualizes."""
+    insert_points(
+        app,
+        "temperature",
+        "gauge",
+        [{"ts": FROM_MS + 1000, "value": 20.0}],
+    )
+
+    with app.app_context():
+        metric = db.session.execute(
+            select(Metric).where(Metric.name == "temperature")
+        ).scalar_one()
+        dashboard = Dashboard(name="Operations", created_at_ms=0)
+        db.session.add(dashboard)
+        db.session.flush()
+        db.session.add(
+            Widget(
+                dashboard_id=dashboard.id,
+                metric_id=metric.id,
+                title="Temperature",
+                chart_type="line",
+                agg="avg",
+                bucket_sec=None,
+                time_range="24h",
+                group_by=None,
+                filters="[]",
+                position=0,
+                created_at_ms=0,
+            )
+        )
+        db.session.commit()
+        dashboard_id = dashboard.id
+
+    response = client.get(f"/dashboards/{dashboard_id}")
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert '/metrics/temperature/raw' in html
