@@ -36,14 +36,9 @@ def create_app(config: Mapping[str, Any] | None = None) -> Flask:
     if os.environ.get("DATABASE_URL"):
         database_url = os.environ["DATABASE_URL"]
     else:
-        # Fallback: aseguramos que exista el folder y usemos SQLite en archivo.
-        try:
-            instance_path = Path(app.instance_path)
-            instance_path.mkdir(parents=True, exist_ok=True)
-            database_url = f"sqlite:///{instance_path}/metrics.db"
-        except Exception:
-            # Último recurso: SQLite en memoria para que la app inicie.
-            database_url = "sqlite://"
+        # Fallback: SQLite en archivo dentro del directorio instance, que Flask
+        # crea automáticamente y que .gitignore excluye del control de versiones.
+        database_url = default_database_url(app.instance_path)
 
     app.config.from_mapping(
         DATABASE_URL=database_url,
