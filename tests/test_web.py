@@ -160,6 +160,49 @@ def test_unknown_dashboard_renders_an_explicit_404(client: FlaskClient) -> None:
     assert "List the dashboards" in html
 
 
+# ------------------------------------------------------------------ rename
+
+
+
+
+
+
+
+
+def test_the_dashboard_page_offers_the_time_picker(client: FlaskClient) -> None:
+    """The dashboard header carries the range picker of the whole dashboard."""
+    dashboard_id = create_dashboard(client, name="Operations")
+
+    response = client.get(f"/dashboards/{dashboard_id}")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+
+    assert 'data-role="time-picker"' in html
+    assert 'data-role="time-picker-button"' in html
+    assert 'data-role="time-picker-menu"' in html
+    # The widest window the picker offers is one week.
+    assert 'data-range="7d"' in html
+    assert 'data-range="30d"' not in html
+
+
+def test_the_widget_metadata_shows_the_range_in_use(client: FlaskClient) -> None:
+    """The metadata line of a widget states the range that is displayed."""
+    ingest(client)
+    dashboard_id = create_dashboard(client, name="Operations")
+    client.post(
+        f"/dashboards/{dashboard_id}/widgets",
+        data=widget_form(title="Requests", time_range="30d"),
+    )
+
+    response = client.get(f"/dashboards/{dashboard_id}")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+
+    # The range of the widget is inside a node the front end can replace with
+    # the range the dashboard is showing.
+    assert '<span data-role="range">30d</span>' in html
+
+
 # ------------------------------------------------------------------ widgets
 
 

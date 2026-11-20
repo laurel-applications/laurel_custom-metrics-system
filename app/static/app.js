@@ -27,6 +27,21 @@
     "30d": 30 * 24 * 60 * 60 * 1000
   };
 
+  /* The ranges the dashboard level picker offers, in the order they are shown.
+     The widest window is one week: longer windows make the server scan and
+     serialize a month of raw points on every load, which is what exhausts the
+     workers. */
+  var GLOBAL_RANGES = [
+    { value: "15m", label: "Last 15 minutes" },
+    { value: "1h", label: "Last 1 hour" },
+    { value: "6h", label: "Last 6 hours" },
+    { value: "24h", label: "Last 24 hours" },
+    { value: "7d", label: "Last 7 days" }
+  ];
+
+  /* The range used when the URL does not ask for one. */
+  var DEFAULT_RANGE = "1h";
+
   var NUMERIC_OPERATORS = ["=", "!=", ">", ">=", "<", "<=", "between"];
   var STRING_OPERATORS = [
     "=",
@@ -51,6 +66,10 @@
   };
 
   var charts = {};
+
+  /* The range the dashboard is currently showing.  It is a dashboard level
+     decision, so it overrides the range stored in each widget. */
+  var activeRange = DEFAULT_RANGE;
 
   /* ---------------------------------------------------------------- helpers */
 
@@ -162,7 +181,7 @@
 
   function buildPayload(config) {
     var now = Date.now();
-    var span = RANGE_MS[config.time_range] || RANGE_MS["24h"];
+    var span = RANGE_MS[activeRange] || RANGE_MS[DEFAULT_RANGE];
     var bucket = config.bucket;
 
     return {
@@ -197,6 +216,136 @@
           return { ok: response.ok, status: response.status, data: data };
         });
     });
+  }
+
+  /* ------------------------------------------------------- dashboard range */
+
+  function rangeLabel(range) {
+    var found = GLOBAL_RANGES.filter(function (entry) {
+      return entry.value === range;
+    });
+    return found.length ? found[0].label : range;
+  }
+
+  /* The range asked for by the URL, or the default one when the URL is silent
+     or asks for a range the picker does not offer. */
+  function rangeFromUrl() {
+    var value = new URLSearchParams(window.location.search).get("range");
+    var known = GLOBAL_RANGES.some(function (entry) {
+      return entry.value === value;
+    });
+    return known ? value : DEFAULT_RANGE;
+  }
+
+  /* Write the range into the URL so the view can be shared and restored. */
+  function rangeToUrl(range) {
+    var url = new URL(window.location.href);
+    url.searchParams.set("range", range);
+    return url.toString();
+  }
+
+  /* Show the range in the widget metadata and in the picker label. */
+  function syncRangeLabels(range) {
+    var label = document.querySelector('[data-role="time-picker-label"]');
+    if (label) {
+      label.textContent = rangeLabel(range);
+    }
+    Array.prototype.forEach.call(
+      document.querySelectorAll('[data-role="range"]'),
+      function (node) {
+        node.textContent = range;
+      }
+    );
+  }
+
+  function renderAllWidgets() {
+    Array.prototype.forEach.call(
+      document.querySelectorAll("[data-widget-id]"),
+      function (widget) {
+        renderWidget(widget);
+      }
+    );
+  }
+
+  /* Apply a range to the whole dashboard: the widgets are re-queried with the
+     new window and the URL follows the selection. */
+  function applyRange(range, options) {
+    var push = !options || options.push !== false;
+    activeRange = range;
+    syncRangeLabels(range);
+    if (push && window.history && window.history.pushState) {
+      window.history.pushState({ range: range }, "", rangeToUrl(range));
+    } else if (window.history && window.history.replaceState) {
+      window.history.replaceState({ range: range }, "", rangeToUrl(range));
+    }
+    renderAllWidgets();
+  }
+
+  function initTimePicker() {
+    var picker = document.querySelector('[data-role="time-picker"]');
+    if (!picker) {
+      return;
+    }
+
+    var button = picker.querySelector('[data-role="time-picker-button"]');
+    var menu = picker.querySelector('[data-role="time-picker-menu"]');
+    if (!button || !menu) {
+      return;
+    }
+
+    function closeMenu() {
+      menu.hidden = true;
+      button.setAttribute("aria-expanded", "false");
+    }
+
+    function openMenu() {
+      menu.hidden = false;
+      button.setAttribute("aria-expanded", "true");
+    }
+
+    function choose(range) {
+      closeMenu();
+      applyRange(range);
+      button.focus();
+    }
+
+    button.addEventListener("click", function () {
+      if (menu.hidden) {
+        openMenu();
+      } else {
+        closeMenu();
+      }
+    });
+
+    Array.prototype.forEach.call(
+      menu.querySelectorAll("[data-range]"),
+      function (option) {
+        option.addEventListener("click", function () {
+          choose(option.getAttribute("data-range"));
+        });
+      }
+    );
+
+    document.addEventListener("click", function (event) {
+      if (!picker.contains(event.target)) {
+        closeMenu();
+      }
+    });
+
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && !menu.hidden) {
+        closeMenu();
+        button.focus();
+      }
+    });
+
+    // The browser back button moves between the ranges of the session.
+    window.addEventListener("popstate", function () {
+      applyRange(rangeFromUrl(), { push: false });
+    });
+
+    activeRange = rangeFromUrl();
+    syncRangeLabels(activeRange);
   }
 
   /* ------------------------------------------------------------ rendering */
@@ -296,7 +445,7 @@
       " (" +
       config.agg +
       ") over " +
-      config.time_range;
+      activeRange;
 
     var stat = document.createElement("div");
     stat.className = "stat";
@@ -878,6 +1027,7 @@
   /* ---------------------------------------------------------------- start */
 
   function init() {
+    initTimePicker();
     Array.prototype.forEach.call(
       document.querySelectorAll("[data-widget-id]"),
       function (widget) {

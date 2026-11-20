@@ -34,6 +34,9 @@ RAW_JS = REPO_ROOT / "app" / "static" / "raw.js"
 #: The JavaScript regression test of the filter values.
 JS_TEST = REPO_ROOT / "tests" / "js" / "filter_value_test.js"
 
+#: The JavaScript regression test of the dashboard time range.
+JS_RANGE_TEST = REPO_ROOT / "tests" / "js" / "dashboard_range_test.js"
+
 #: The node executable, or None when node is not installed.
 NODE = shutil.which("node")
 
@@ -71,6 +74,42 @@ def test_a_textual_filter_value_stays_a_text() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_dashboard_range_overrides_the_range_of_the_widget() -> None:
+    """The window sent to the query API is the range of the dashboard.
+
+    The bug this guards: every widget built the window of its query from the
+    ``time_range`` stored in the widget, so a widget configured with ``30d``
+    scanned a month of raw points on every dashboard load and exhausted the
+    workers.
+    """
+    result = subprocess.run(
+        [NODE, str(JS_RANGE_TEST), str(APP_JS)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_the_front_end_queries_with_the_range_of_the_dashboard() -> None:
+    """The payload of a widget is built from the range of the dashboard.
+
+    The assertions look for the state the dashboard range lives in and for the
+    window the payload is built with, so the range stored in the widget can
+    never take the place of the one the user picked.
+    """
+    source = APP_JS.read_text(encoding="utf-8")
+
+    assert "var activeRange = DEFAULT_RANGE;" in source
+    assert "var span = RANGE_MS[activeRange] || RANGE_MS[DEFAULT_RANGE];" in source
+    assert "RANGE_MS[config.time_range]" not in source
+    # The range travels in the URL, so the view can be shared and restored.
+    assert "function rangeFromUrl()" in source
+    assert "function rangeToUrl(" in source
+    assert "function initTimePicker()" in source
 
 
 def test_a_failed_widget_query_never_leaves_a_blank_chart() -> None:

@@ -14,6 +14,31 @@
         </p>
       </div>
       <div class="panel-actions">
+        <div class="time-picker" data-role="time-picker">
+          <button
+            type="button"
+            class="time-picker-button"
+            data-role="time-picker-button"
+            aria-haspopup="listbox"
+            aria-expanded="false"
+          >
+            <span data-role="time-picker-label">Last 1 hour</span>
+            <span class="time-picker-caret" aria-hidden="true">&#9662;</span>
+          </button>
+          <div
+            class="time-picker-menu"
+            data-role="time-picker-menu"
+            role="listbox"
+            aria-label="Time range"
+            hidden
+          >
+            <button type="button" class="time-picker-option" role="option" data-range="15m">Last 15 minutes</button>
+            <button type="button" class="time-picker-option" role="option" data-range="1h">Last 1 hour</button>
+            <button type="button" class="time-picker-option" role="option" data-range="6h">Last 6 hours</button>
+            <button type="button" class="time-picker-option" role="option" data-range="24h">Last 24 hours</button>
+            <button type="button" class="time-picker-option" role="option" data-range="7d">Last 7 days</button>
+          </div>
+        </div>
         <a
           class="button"
           href="{{ url_for('web.widget_form_new', dashboard_id=dashboard.id) }}"
@@ -48,7 +73,8 @@
                 <h2 class="widget-title">{{ widget.title }}</h2>
                 <p class="widget-meta">
                   {{ widget.metric_name }} &middot; {{ widget.agg }} &middot;
-                  {{ widget.time_range }} &middot; {{ widget.chart_type }}
+                  <span data-role="range">{{ widget.time_range }}</span>
+                  &middot; {{ widget.chart_type }}
                   {% if widget.group_by %}&middot; by {{ widget.group_by }}{% endif %}
                 </p>
               </div>
