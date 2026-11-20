@@ -37,6 +37,23 @@
             <button type="button" class="time-picker-option" role="option" data-range="6h">Last 6 hours</button>
             <button type="button" class="time-picker-option" role="option" data-range="24h">Last 24 hours</button>
             <button type="button" class="time-picker-option" role="option" data-range="7d">Last 7 days</button>
+            <button type="button" class="time-picker-option" role="option" data-range="30d">Last 30 days</button>
+            <button type="button" class="time-picker-option" role="option" data-range="90d">Last 90 days</button>
+            <button type="button" class="time-picker-option" role="option" data-range="1y">Last 1 year</button>
+            <button type="button" class="time-picker-option" role="option" data-range="prev-year">Previous year</button>
+            <button type="button" class="time-picker-option" role="option" data-range="custom">Custom range&hellip;</button>
+            <div class="time-picker-custom" data-role="custom-panel" hidden>
+              <label class="time-picker-custom-field">
+                <span>From</span>
+                <input type="datetime-local" data-role="custom-start" />
+              </label>
+              <label class="time-picker-custom-field">
+                <span>To</span>
+                <input type="datetime-local" data-role="custom-end" />
+              </label>
+              <p class="time-picker-custom-error" data-role="custom-error" aria-live="polite"></p>
+              <button type="button" class="button button-small" data-role="custom-apply">Apply</button>
+            </div>
           </div>
         </div>
         <details class="dashboard-rename"{% if error %} open{% endif %}>
@@ -66,7 +83,8 @@
         <form
           method="post"
           action="{{ url_for('web.dashboard_delete', dashboard_id=dashboard.id) }}"
-          onsubmit="return confirm('Delete this dashboard and all its widgets?');"
+          data-role="confirm-form"
+          data-confirm="Delete this dashboard and all its widgets? This cannot be undone."
         >
           <button type="submit" class="button button-danger">Delete dashboard</button>
         </form>
@@ -98,6 +116,14 @@
                 </p>
               </div>
               <div class="widget-actions">
+                <button
+                  type="button"
+                  class="button button-small button-ghost"
+                  data-role="expand"
+                  aria-label="Open {{ widget.title }} in a large view"
+                >
+                  Expand
+                </button>
                 <a
                   class="button button-small button-ghost"
                   href="{{ url_for('web.raw_data', metric_name=widget.metric_name) }}"
@@ -111,6 +137,8 @@
                 <form
                   method="post"
                   action="{{ url_for('web.widget_delete', widget_id=widget.id) }}"
+                  data-role="confirm-form"
+                  data-confirm="Delete the widget &quot;{{ widget.title }}&quot;? This cannot be undone."
                 >
                   <button type="submit" class="button button-small button-danger">
                     Delete
@@ -141,4 +169,20 @@
       </div>
     {% endif %}
   </section>
+
+  {# The large view of a single widget.  The detail is rendered into this
+     dialog with the same configuration and follows the dashboard range. #}
+  <dialog
+    class="widget-modal"
+    data-role="widget-modal"
+    aria-labelledby="widget-modal-title"
+  >
+    <header class="widget-modal-head">
+      <h2 class="widget-modal-title" id="widget-modal-title" data-role="widget-modal-title"></h2>
+      <button type="button" class="button button-small" data-role="widget-modal-close">
+        Close
+      </button>
+    </header>
+    <div class="widget-modal-body" data-role="widget-modal-body"></div>
+  </dialog>
 {% endblock %}

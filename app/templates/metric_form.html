@@ -131,21 +131,6 @@
         </label>
 
         <label class="field">
-          <span class="field-label">Time range</span>
-          <select name="time_range">
-            {% for time_range in time_ranges %}
-              <option
-                value="{{ time_range }}"
-                {% if values.time_range == time_range %}selected{% endif %}
-              >
-                {{ time_range }}
-              </option>
-            {% endfor %}
-          </select>
-          <span class="field-hint">The range is resolved against the browser clock.</span>
-        </label>
-
-        <label class="field">
           <span class="field-label">Group by tag</span>
           <select name="group_by" data-role="group-by-select">
             <option value="">No grouping</option>

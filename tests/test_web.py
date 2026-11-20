@@ -58,7 +58,6 @@ def widget_form(**overrides: Any) -> dict[str, Any]:
         "chart_type": "line",
         "agg": "sum",
         "bucket": "auto",
-        "time_range": "24h",
         "group_by": "",
         "filters": "[]",
     }
@@ -275,27 +274,36 @@ def test_the_dashboard_page_offers_the_time_picker(client: FlaskClient) -> None:
     assert 'data-role="time-picker"' in html
     assert 'data-role="time-picker-button"' in html
     assert 'data-role="time-picker-menu"' in html
-    # The widest window the picker offers is one week.
+    # The picker reaches a year, the previous year and a custom window.  A wide
+    # window is safe because the server sizes the bucket from the span.
     assert 'data-range="7d"' in html
-    assert 'data-range="30d"' not in html
+    assert 'data-range="30d"' in html
+    assert 'data-range="90d"' in html
+    assert 'data-range="1y"' in html
+    assert 'data-range="prev-year"' in html
+    assert 'data-range="custom"' in html
+    assert 'data-role="custom-apply"' in html
 
 
 def test_the_widget_metadata_shows_the_range_in_use(client: FlaskClient) -> None:
-    """The metadata line of a widget states the range that is displayed."""
+    """The metadata line carries a node the front end replaces.
+
+    The stored range is no longer edited in the widget form: the dashboard
+    picker decides the window, so a new widget keeps the default ``24h`` until
+    the front end writes the label of the dashboard range.
+    """
     ingest(client)
     dashboard_id = create_dashboard(client, name="Operations")
     client.post(
         f"/dashboards/{dashboard_id}/widgets",
-        data=widget_form(title="Requests", time_range="30d"),
+        data=widget_form(title="Requests"),
     )
 
     response = client.get(f"/dashboards/{dashboard_id}")
     assert response.status_code == 200
     html = response.get_data(as_text=True)
 
-    # The range of the widget is inside a node the front end can replace with
-    # the range the dashboard is showing.
-    assert '<span data-role="range">30d</span>' in html
+    assert '<span data-role="range">24h</span>' in html
 
 
 # ------------------------------------------------------------------ widgets
@@ -501,7 +509,6 @@ def test_widget_edit_form_is_prefilled(client: FlaskClient) -> None:
             chart_type="bar",
             agg="avg",
             bucket="300",
-            time_range="6h",
             group_by="host",
             filters=json.dumps([{"field": "tags.host", "op": "=", "value": "web-1"}]),
         ),

@@ -69,8 +69,13 @@ const helpers = new Function(
   [
     extractVar("RANGE_MS"),
     extractVar("GLOBAL_RANGES"),
+    extractVar("TIMEZONE_OFFSET_MS"),
     extractVar("DEFAULT_RANGE"),
     extractVar("activeRange"),
+    extractVar("customWindow"),
+    extract("isKnownRange"),
+    extract("previousYearWindow"),
+    extract("resolveWindow"),
     extract("buildPayload"),
     extract("rangeLabel"),
     extract("rangeFromUrl"),
@@ -101,8 +106,14 @@ const SPAN_MS = {
   "1h": 60 * 60 * 1000,
   "6h": 6 * 60 * 60 * 1000,
   "24h": 24 * 60 * 60 * 1000,
-  "7d": 7 * 24 * 60 * 60 * 1000
+  "7d": 7 * 24 * 60 * 60 * 1000,
+  "30d": 30 * 24 * 60 * 60 * 1000,
+  "90d": 90 * 24 * 60 * 60 * 1000,
+  "1y": 365 * 24 * 60 * 60 * 1000
 };
+
+/* The offset of the local time of Colombia from UTC. */
+const TZ_MS = -5 * 60 * 60 * 1000;
 
 /* A widget configuration, with the range it stores. */
 function widgetConfig(timeRange) {
@@ -186,17 +197,76 @@ try {
   // The label of the picker is the human one.
   check("the label of a range", helpers.rangeLabel("1h"), "Last 1 hour");
   check("the label of the widest range", helpers.rangeLabel("7d"), "Last 7 days");
+  check("the label of a one year range", helpers.rangeLabel("1y"), "Last 1 year");
+  check(
+    "the label of the previous year",
+    helpers.rangeLabel("prev-year"),
+    "Previous year"
+  );
+  check("the label of the custom range", helpers.rangeLabel("custom"), "Custom range");
   check(
     "a range the picker does not offer keeps its own name",
-    helpers.rangeLabel("30d"),
-    "30d"
+    helpers.rangeLabel("42d"),
+    "42d"
+  );
+
+  // The long rolling ranges keep the rolling window.
+  helpers.setRange("1y");
+  const year = helpers.buildPayload(widgetConfig("30d"));
+  check("a one year range spans a year", year.from, NOW - SPAN_MS["1y"]);
+  check("a long range still ends now", year.to, NOW);
+
+  helpers.setRange("90d");
+  const quarter = helpers.buildPayload(widgetConfig("30d"));
+  check("a ninety day range spans ninety days", quarter.from, NOW - SPAN_MS["90d"]);
+
+  // The previous year is the previous calendar year in Colombia time.
+  helpers.setRange("prev-year");
+  const previous = helpers.buildPayload(widgetConfig("30d"));
+  check(
+    "the previous year starts on January 1",
+    previous.from,
+    Date.UTC(2022, 0, 1, 0, 0, 0, 0) - TZ_MS
+  );
+  check(
+    "the previous year ends on December 31",
+    previous.to,
+    Date.UTC(2023, 0, 1, 0, 0, 0, 0) - 1 - TZ_MS
   );
 
   // The range travels in the URL, so the view can be shared and restored.
   browser.location.search = "?range=6h";
   check("the range of the URL", helpers.rangeFromUrl(), "6h");
 
-  browser.location.search = "?range=30d";
+  browser.location.search = "?range=1y";
+  check("a one year range travels in the URL", helpers.rangeFromUrl(), "1y");
+
+  browser.location.search = "?range=prev-year";
+  check(
+    "the previous year travels in the URL",
+    helpers.rangeFromUrl(),
+    "prev-year"
+  );
+
+  // A custom range carries its two absolute bounds in the URL.
+  browser.location.search = "?range=custom&from=1000&to=2000";
+  check("a custom range travels in the URL", helpers.rangeFromUrl(), "custom");
+  helpers.setRange("custom");
+  const custom = helpers.buildPayload(widgetConfig("30d"));
+  check("a custom range starts where the URL says", custom.from, 1000);
+  check("a custom range ends where the URL says", custom.to, 2000);
+  const customUrl = new URL(helpers.rangeToUrl("custom"));
+  check("the custom start is written in the URL", customUrl.searchParams.get("from"), "1000");
+  check("the custom end is written in the URL", customUrl.searchParams.get("to"), "2000");
+
+  browser.location.search = "?range=custom&from=2000&to=1000";
+  check(
+    "a custom range with the bounds reversed falls back to the default",
+    helpers.rangeFromUrl(),
+    "1h"
+  );
+
+  browser.location.search = "?range=42d";
   check(
     "a range the picker does not offer falls back to the default",
     helpers.rangeFromUrl(),

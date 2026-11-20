@@ -31,11 +31,17 @@ APP_JS = REPO_ROOT / "app" / "static" / "app.js"
 #: The raw data browser script.
 RAW_JS = REPO_ROOT / "app" / "static" / "raw.js"
 
+#: The dashboard template that renders the time picker.
+DASHBOARD_HTML = REPO_ROOT / "app" / "templates" / "dashboard.html"
+
 #: The JavaScript regression test of the filter values.
 JS_TEST = REPO_ROOT / "tests" / "js" / "filter_value_test.js"
 
 #: The JavaScript regression test of the dashboard time range.
 JS_RANGE_TEST = REPO_ROOT / "tests" / "js" / "dashboard_range_test.js"
+
+#: The JavaScript regression test of the local time and of the time axis.
+JS_TIMEZONE_TEST = REPO_ROOT / "tests" / "js" / "timezone_axis_test.js"
 
 #: The node executable, or None when node is not installed.
 NODE = shutil.which("node")
@@ -94,6 +100,48 @@ def test_the_dashboard_range_overrides_the_range_of_the_widget() -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_timestamps_are_local_and_the_axis_keeps_the_gaps() -> None:
+    """The timestamps are local and the empty buckets stay on the axis.
+
+    The two defects this guards: the timestamps were rendered in UTC, five
+    hours ahead of the local time of Colombia, and the axis of a chart was
+    built from the timestamps the server sent, so a period without a
+    measurement collapsed the axis and the silence of the metric disappeared.
+    """
+    result = subprocess.run(
+        [NODE, str(JS_TIMEZONE_TEST), str(APP_JS)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_the_timestamps_of_the_front_end_are_rendered_in_the_local_time() -> None:
+    """The front end renders the local time of Colombia, not UTC."""
+    source = APP_JS.read_text(encoding="utf-8")
+
+    assert "var TIMEZONE_OFFSET_MS = -5 * 60 * 60 * 1000;" in source
+    assert "+ TIMEZONE_OFFSET_MS" in source
+    assert '" GMT-5"' in source
+    # The tooltip of a chart is rendered in the local time too: the default
+    # title would be the raw epoch label.
+    assert "function tooltipTitle(" in source
+    assert "title: tooltipTitle" in source
+
+
+def test_the_chart_keeps_the_empty_buckets_visible() -> None:
+    """The axis of a chart holds every bucket of the window."""
+    source = APP_JS.read_text(encoding="utf-8")
+
+    assert "function buildTimeAxis(" in source
+    assert "buildTimeAxis(data.from_ms, data.to_ms, data.bucket_sec)" in source
+    # A period without data is a break in the line, never a joined segment.
+    assert "spanGaps: false" in source
+    assert "spanGaps: true" not in source
+
+
 def test_the_front_end_queries_with_the_range_of_the_dashboard() -> None:
     """The payload of a widget is built from the range of the dashboard.
 
@@ -110,6 +158,43 @@ def test_the_front_end_queries_with_the_range_of_the_dashboard() -> None:
     assert "function rangeFromUrl()" in source
     assert "function rangeToUrl(" in source
     assert "function initTimePicker()" in source
+
+
+def test_the_time_picker_offers_long_and_custom_ranges() -> None:
+    """The picker reaches a year, the previous year and a custom window.
+
+    A year of data is safe: the server sizes the bucket from the span, so the
+    chart receives one point per day, not a year of raw points.
+    """
+    source = APP_JS.read_text(encoding="utf-8")
+    html = DASHBOARD_HTML.read_text(encoding="utf-8")
+
+    assert '"1y": 365 * 24 * 60 * 60 * 1000' in source
+    assert 'value: "90d"' in source
+    assert 'value: "1y"' in source
+    assert 'value: "prev-year"' in source
+    assert 'value: "custom"' in source
+    assert "function previousYearWindow(" in source
+    assert "function resolveWindow(" in source
+
+    assert 'data-range="90d"' in html
+    assert 'data-range="1y"' in html
+    assert 'data-range="prev-year"' in html
+    assert 'data-range="custom"' in html
+    assert 'data-role="custom-panel"' in html
+    assert 'data-role="custom-apply"' in html
+
+
+def test_the_selected_range_is_remembered_across_reloads() -> None:
+    """The picker restores the last selection from the browser storage."""
+    source = APP_JS.read_text(encoding="utf-8")
+
+    assert "var STORAGE_KEY = \"laurel.dashboard.range\";" in source
+    assert "function savedRange()" in source
+    assert "function saveRange(" in source
+    assert "function initialRange()" in source
+    assert "window.localStorage.getItem(STORAGE_KEY)" in source
+    assert "window.localStorage.setItem(STORAGE_KEY" in source
 
 
 def test_a_failed_widget_query_never_leaves_a_blank_chart() -> None:

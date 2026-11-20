@@ -66,12 +66,17 @@
     }
   }
 
+  /* Colombia does not observe daylight saving time, so its offset from UTC is
+     a constant five hours. */
+  var TIMEZONE_OFFSET_MS = -5 * 60 * 60 * 1000;
+
   function formatTime(timestamp) {
     var date = new Date(timestamp);
     if (isNaN(date.getTime())) {
       return String(timestamp);
     }
-    return date.toISOString().replace("T", " ").slice(0, 19) + " UTC";
+    var local = new Date(date.getTime() + TIMEZONE_OFFSET_MS);
+    return local.toISOString().replace("T", " ").slice(0, 19) + " GMT-5";
   }
 
   function formatDateInput(timestamp) {
@@ -79,10 +84,15 @@
     if (isNaN(date.getTime())) {
       return "";
     }
-    return date.toISOString().slice(0, 16);
+    var local = new Date(date.getTime() + TIMEZONE_OFFSET_MS);
+    return local.toISOString().slice(0, 16);
   }
 
-  function parseUtc(value) {
+  /* The value of a datetime-local input carries no zone: it is the local time
+     the user reads and edits.  It is read back as Colombia time, so the
+     offset is added to the epoch again and the window sent to the API is the
+     very moment the user typed. */
+  function parseLocal(value) {
     var text = String(value || "").trim();
     if (!text) {
       return null;
@@ -92,7 +102,10 @@
     }
     text += "Z";
     var parsed = Date.parse(text);
-    return isNaN(parsed) ? null : parsed;
+    if (isNaN(parsed)) {
+      return null;
+    }
+    return parsed - TIMEZONE_OFFSET_MS;
   }
 
   function fetchJson(url) {
@@ -297,8 +310,8 @@
 
     var selected = rangeSelect.value;
     if (selected === "custom") {
-      var start = parseUtc(startInput && startInput.value);
-      var end = parseUtc(endInput && endInput.value);
+      var start = parseLocal(startInput && startInput.value);
+      var end = parseLocal(endInput && endInput.value);
       if (start === null || end === null) {
         renderLocalRangeError(
           "The custom range needs a valid start and end.",

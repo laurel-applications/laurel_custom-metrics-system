@@ -36,5 +36,27 @@
     <script src="{{ url_for('static', filename='vendor/sortable.min.js') }}"></script>
     <script src="{{ url_for('static', filename='app.js') }}"></script>
     <script src="{{ url_for('static', filename='raw.js') }}"></script>
+
+    {# The confirmation dialog shared by every destructive action.  It replaces
+       the native confirm() of the browser, which cannot be styled and blocks
+       the whole page. #}
+    <dialog
+      class="confirm-dialog"
+      data-role="confirm-dialog"
+      aria-labelledby="confirm-dialog-title"
+    >
+      <h2 class="confirm-dialog-title" id="confirm-dialog-title">
+        Confirm the deletion
+      </h2>
+      <p class="confirm-dialog-message" data-role="confirm-dialog-message"></p>
+      <div class="confirm-dialog-actions">
+        <button type="button" class="button" data-role="confirm-cancel">
+          Cancel
+        </button>
+        <button type="button" class="button button-danger" data-role="confirm-accept">
+          Delete
+        </button>
+      </div>
+    </dialog>
   </body>
 </html>

@@ -558,7 +558,7 @@ def test_raw_page_renders_the_picker_and_first_page(
     assert "temperature raw data" in html
     assert "Timestamp" in html
     assert "Received at" in html
-    assert "2023-11-14 22:13:23 UTC" in html
+    assert "2023-11-14 17:13:23 GMT-5" in html
     assert "22.0" in html
     assert 'value="5m"' in html
     assert 'value="15m"' in html

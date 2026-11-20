@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from typing import Any, Mapping
+from zoneinfo import ZoneInfo
 
 from flask import Blueprint, Response, jsonify, redirect, render_template, request, url_for
 from sqlalchemy import func, select
@@ -44,6 +45,15 @@ RAW_REFRESH_INTERVALS: tuple[str, ...] = ("off", "2s", "5s", "10s", "30s", "1m")
 
 #: The largest number of points a CSV export may contain.
 RAW_EXPORT_LIMIT = 10_000
+
+#: The timezone every timestamp is rendered in.  Colombia does not observe
+#: daylight saving time, so the offset from UTC is a constant five hours.
+LOCAL_TIMEZONE = ZoneInfo("America/Bogota")
+
+#: The stored range of a new widget.  The dashboard level picker decides the
+#: window of every chart, so the per-widget range is no longer edited; the
+#: column stays for compatibility and keeps a valid value.
+DEFAULT_WIDGET_TIME_RANGE = "24h"
 
 
 def _now_ms() -> int:
@@ -291,8 +301,8 @@ def _raw_range() -> tuple[int, int, str]:
 
 
 def _datetime_local(timestamp_ms: int) -> str:
-    """Return an epoch millisecond timestamp as a UTC datetime-local value."""
-    moment = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
+    """Return an epoch millisecond timestamp as a local datetime-local value."""
+    moment = datetime.fromtimestamp(timestamp_ms / 1000, tz=LOCAL_TIMEZONE)
     return moment.strftime("%Y-%m-%dT%H:%M")
 
 
@@ -416,7 +426,6 @@ def _render_widget_form(
         "chart_type": "line",
         "agg": "avg",
         "bucket": "auto",
-        "time_range": "24h",
         "group_by": "",
         "filters": "[]",
     }
@@ -431,7 +440,6 @@ def _render_widget_form(
                 "chart_type": widget.chart_type,
                 "agg": widget.agg,
                 "bucket": widget.bucket_sec if widget.bucket_sec is not None else "auto",
-                "time_range": widget.time_range,
                 "group_by": config["group_by"] or "",
                 "filters": json.dumps(config["filters"], ensure_ascii=False),
             }
@@ -457,7 +465,6 @@ def _render_widget_form(
             metrics=metrics,
             metric_types=metric_types,
             chart_types=validation.CHART_TYPES,
-            time_ranges=validation.TIME_RANGES,
             values=form_values,
             filter_rows=filter_rows,
             error=error,
@@ -474,7 +481,6 @@ def _widget_form_values() -> dict[str, Any]:
         "chart_type": request.form.get("chart_type", ""),
         "agg": request.form.get("agg", ""),
         "bucket": request.form.get("bucket", ""),
-        "time_range": request.form.get("time_range", ""),
         "group_by": request.form.get("group_by", ""),
         "filters": request.form.get("filters", ""),
     }
@@ -490,7 +496,6 @@ def _parse_widget_form(form: Mapping[str, Any], metric: Metric) -> dict[str, Any
     chart_type = validation.validate_chart_type(form.get("chart_type"))
     agg = validation.validate_aggregation(form.get("agg"), metric.type)
     bucket_sec = validation.validate_bucket(form.get("bucket"))
-    time_range = validation.validate_time_range(form.get("time_range"))
     group_by = validation.validate_group_by(form.get("group_by"))
     filters_json, _ = validation.validate_filters(form.get("filters"), metric.type)
 
@@ -499,7 +504,6 @@ def _parse_widget_form(form: Mapping[str, Any], metric: Metric) -> dict[str, Any
         "chart_type": chart_type,
         "agg": agg,
         "bucket_sec": bucket_sec,
-        "time_range": time_range,
         "group_by": group_by,
         # The filters are stored as the bare array the query API expects, and
         # the group by in its own column.
@@ -509,14 +513,14 @@ def _parse_widget_form(form: Mapping[str, Any], metric: Metric) -> dict[str, Any
 
 @bp.app_template_filter("ts")
 def _format_ts(value: Any) -> str:
-    """Format an epoch millisecond timestamp for the UI."""
+    """Format an epoch millisecond timestamp for the UI, in the local timezone."""
     if value is None:
         return "-"
     try:
-        moment = datetime.fromtimestamp(int(value) / 1000, tz=timezone.utc)
+        moment = datetime.fromtimestamp(int(value) / 1000, tz=LOCAL_TIMEZONE)
     except (TypeError, ValueError, OSError):  # pragma: no cover - defensive
         return "-"
-    return moment.strftime("%Y-%m-%d %H:%M:%S UTC")
+    return moment.strftime("%Y-%m-%d %H:%M:%S GMT-5")
 
 
 @bp.app_template_filter("jvalue")
@@ -636,7 +640,7 @@ def widget_create(dashboard_id: int) -> Any:
         chart_type=parsed["chart_type"],
         agg=parsed["agg"],
         bucket_sec=parsed["bucket_sec"],
-        time_range=parsed["time_range"],
+        time_range=DEFAULT_WIDGET_TIME_RANGE,
         group_by=parsed["group_by"],
         filters=parsed["filters"],
         position=_next_position(dashboard.id),
@@ -680,7 +684,8 @@ def widget_update(widget_id: int) -> Any:
     widget.chart_type = parsed["chart_type"]
     widget.agg = parsed["agg"]
     widget.bucket_sec = parsed["bucket_sec"]
-    widget.time_range = parsed["time_range"]
+    # The stored range is kept as it is: the dashboard picker decides the
+    # window, so the edit form no longer offers it.
     widget.group_by = parsed["group_by"]
     widget.filters = parsed["filters"]
     db.session.commit()
