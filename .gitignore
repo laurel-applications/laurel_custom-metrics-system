@@ -6,3 +6,5 @@ __pycache__/
 .env
 .atl/
 codegraph.db
+# The CodeGraph index and its runtime files are local tooling state.
+.codegraph/
