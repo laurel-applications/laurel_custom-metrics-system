@@ -163,10 +163,105 @@ def test_unknown_dashboard_renders_an_explicit_404(client: FlaskClient) -> None:
 # ------------------------------------------------------------------ rename
 
 
+def test_rename_dashboard_persists_the_name_and_redirects(
+    app: Flask, client: FlaskClient
+) -> None:
+    """A valid name is stored and the browser comes back to the dashboard."""
+    dashboard_id = create_dashboard(client, name="Operations")
+
+    response = client.post(
+        f"/dashboards/{dashboard_id}/rename", data={"name": "Production overview"}
+    )
+    assert response.status_code == 303
+    assert f"/dashboards/{dashboard_id}" in response.headers["Location"]
+
+    with app.app_context():
+        dashboard = db.session.get(Dashboard, dashboard_id)
+        assert dashboard.name == "Production overview"
+
+    detail = client.get(f"/dashboards/{dashboard_id}")
+    assert detail.status_code == 200
+    assert "Production overview" in detail.get_data(as_text=True)
 
 
+def test_rename_dashboard_with_an_empty_name_renders_the_error(
+    app: Flask, client: FlaskClient
+) -> None:
+    """An empty name re-renders the page with the explicit error block."""
+    dashboard_id = create_dashboard(client, name="Operations")
+
+    response = client.post(f"/dashboards/{dashboard_id}/rename", data={"name": ""})
+    assert response.status_code == 400
+    html = response.get_data(as_text=True)
+    assert_error_block(html, "INVALID_NAME")
+    assert "The name is required" in html
+
+    # The stored name is untouched: a rejected rename changes nothing.
+    with app.app_context():
+        dashboard = db.session.get(Dashboard, dashboard_id)
+        assert dashboard.name == "Operations"
 
 
+def test_rename_dashboard_with_a_blank_name_renders_the_error(
+    app: Flask, client: FlaskClient
+) -> None:
+    """A name of blanks is rejected the same way an empty one is."""
+    dashboard_id = create_dashboard(client, name="Operations")
+
+    response = client.post(
+        f"/dashboards/{dashboard_id}/rename", data={"name": "   "}
+    )
+    assert response.status_code == 400
+    html = response.get_data(as_text=True)
+    assert_error_block(html, "INVALID_NAME")
+    assert "The name is required" in html
+
+    with app.app_context():
+        dashboard = db.session.get(Dashboard, dashboard_id)
+        assert dashboard.name == "Operations"
+
+
+def test_the_dashboard_list_shows_the_renamed_dashboard(
+    app: Flask, client: FlaskClient
+) -> None:
+    """The list shows the new name right after the rename."""
+    dashboard_id = create_dashboard(client, name="Operations")
+    client.post(
+        f"/dashboards/{dashboard_id}/rename", data={"name": "Production overview"}
+    )
+
+    response = client.get("/dashboards")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "Production overview" in html
+    assert "Operations" not in html
+
+
+def test_the_dashboard_page_offers_the_rename_form(client: FlaskClient) -> None:
+    """The rename form is on the page and it works without JavaScript."""
+    dashboard_id = create_dashboard(client, name="Operations")
+
+    response = client.get(f"/dashboards/{dashboard_id}")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+
+    assert f"/dashboards/{dashboard_id}/rename" in html
+    assert 'name="name"' in html
+    assert "Rename" in html
+
+
+def test_rename_of_an_unknown_dashboard_renders_an_explicit_404(
+    client: FlaskClient,
+) -> None:
+    """The rename of a dashboard that does not exist is a 404, not a crash."""
+    response = client.post("/dashboards/4242/rename", data={"name": "Ghost"})
+    assert response.status_code == 404
+    html = response.get_data(as_text=True)
+    assert_error_block(html, "DASHBOARD_NOT_FOUND")
+    assert "There is no dashboard with the id 4242" in html
+
+
+# ------------------------------------------------------------- time picker
 
 
 def test_the_dashboard_page_offers_the_time_picker(client: FlaskClient) -> None:

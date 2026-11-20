@@ -39,6 +39,25 @@
             <button type="button" class="time-picker-option" role="option" data-range="7d">Last 7 days</button>
           </div>
         </div>
+        <details class="dashboard-rename"{% if error %} open{% endif %}>
+          <summary class="button button-small">Rename</summary>
+          <form
+            method="post"
+            action="{{ url_for('web.dashboard_rename', dashboard_id=dashboard.id) }}"
+            class="rename-form"
+          >
+            <label class="field-label" for="dashboard-name">Dashboard name</label>
+            <input
+              type="text"
+              id="dashboard-name"
+              name="name"
+              value="{{ dashboard.name }}"
+              maxlength="255"
+              required
+            />
+            <button type="submit" class="button button-small">Save</button>
+          </form>
+        </details>
         <a
           class="button"
           href="{{ url_for('web.widget_form_new', dashboard_id=dashboard.id) }}"
@@ -54,7 +73,7 @@
       </div>
     </div>
 
-    {{ error_block(error, "The widget could not be saved") }}
+    {{ error_block(error, "The dashboard could not be renamed") }}
 
     {% if widgets %}
       <p class="grid-status" data-role="order-status" aria-live="polite"></p>

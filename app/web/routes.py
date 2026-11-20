@@ -379,6 +379,25 @@ def _render_dashboards(error: Mapping[str, Any] | None = None, status: int = 200
     )
 
 
+def _render_dashboard_detail(
+    dashboard: Dashboard,
+    *,
+    error: Mapping[str, Any] | None = None,
+    status: int = 200,
+) -> Any:
+    """Render the dashboard page, optionally with an error block."""
+    return (
+        render_template(
+            "dashboard.html",
+            dashboard=dashboard,
+            widgets=_widget_rows(dashboard.id),
+            metrics=_metric_rows(),
+            error=error,
+        ),
+        status,
+    )
+
+
 def _render_widget_form(
     dashboard: Dashboard,
     *,
@@ -564,13 +583,25 @@ def dashboard_create() -> Any:
 def dashboard_detail(dashboard_id: int) -> Any:
     """Show a dashboard with its widgets."""
     dashboard = _get_dashboard(dashboard_id)
-    return render_template(
-        "dashboard.html",
-        dashboard=dashboard,
-        widgets=_widget_rows(dashboard_id),
-        metrics=_metric_rows(),
-        error=None,
-    )
+    return _render_dashboard_detail(dashboard)
+
+
+@bp.post("/dashboards/<int:dashboard_id>/rename")
+def dashboard_rename(dashboard_id: int) -> Any:
+    """Rename a dashboard from the dashboard page."""
+    dashboard = _get_dashboard(dashboard_id)
+
+    try:
+        name = validation.validate_name(request.form.get("name"))
+    except ApiError as error:
+        return _render_dashboard_detail(
+            dashboard, error=_error_payload(error), status=error.http_status
+        )
+
+    dashboard.name = name
+    db.session.commit()
+
+    return redirect(url_for("web.dashboard_detail", dashboard_id=dashboard.id), code=303)
 
 
 @bp.get("/dashboards/<int:dashboard_id>/widgets/new")

@@ -524,3 +524,206 @@ textarea:focus {
   background: var(--accent-soft);
   color: var(--accent);
 }
+
+/* ---------------------------------------------------------- dashboard rename */
+
+.dashboard-rename {
+  position: relative;
+}
+
+.dashboard-rename > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.dashboard-rename > summary::-webkit-details-marker {
+  display: none;
+}
+
+.rename-form {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  width: 18rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+/* ----------------------------------------------------------- widget grid */
+
+.widget-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
+  gap: 1rem;
+}
+
+.widget {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.widget.sortable-ghost {
+  opacity: 0.45;
+}
+
+.widget.sortable-chosen {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.widget-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.7rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-alt);
+}
+
+.widget-handle {
+  cursor: grab;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1.2;
+  user-select: none;
+  padding-top: 0.1rem;
+}
+
+.widget-titles {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.widget-title {
+  margin: 0;
+  font-size: 0.98rem;
+  overflow-wrap: anywhere;
+}
+
+.widget-meta {
+  margin: 0.1rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.widget-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.widget-actions form {
+  margin: 0;
+}
+
+.widget-body {
+  padding: 0.85rem;
+  min-height: 8rem;
+}
+
+.widget-placeholder {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+/* The canvas is sized by Chart.js from its parent, so the parent needs a
+   fixed height. */
+.chart-box {
+  position: relative;
+  height: 16rem;
+  width: 100%;
+}
+
+.widget-error {
+  border: 1px solid var(--danger);
+  background: var(--danger-soft);
+  border-radius: var(--radius);
+  padding: 0.7rem 0.8rem;
+  margin: 0;
+}
+
+.widget-error .error-code {
+  margin-bottom: 0.4rem;
+}
+
+.widget-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.widget-table th,
+.widget-table td {
+  text-align: left;
+  padding: 0.3rem 0.45rem;
+  border-bottom: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+}
+
+.widget-table th {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.stat {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 1.5rem 0.5rem;
+  justify-content: center;
+}
+
+.stat-value {
+  font-size: 2.6rem;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-unit {
+  color: var(--text-muted);
+  font-size: 1rem;
+}
+
+.stat-caption {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  margin: 0 0 0.75rem;
+}
+
+.grid-status {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.grid-status.is-error {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------- footer */
+
+.footer {
+  max-width: 78rem;
+  margin: 0 auto;
+  padding: 0 1.5rem 2rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
